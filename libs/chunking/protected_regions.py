@@ -15,8 +15,6 @@ from .constants import (
     HTML_TABLE_PATTERN, CHART_BLOCK_PATTERN, TEXTBOX_BLOCK_PATTERN,
     IMAGE_TAG_PATTERN, MARKDOWN_TABLE_PATTERN
 )
-# 순환 import 방지를 위해 함수 내에서 import
-# from .table_chunker import chunk_large_table
 
 logger = logging.getLogger("document-processor")
 

@@ -23,11 +23,8 @@ import logging
 import re
 from typing import List, Optional
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-# chunking_helper에서 필요한 모듈 import
-from libs.chunking.chunking_helper import (
-    # constants
+# 개별 모듈에서 필요한 것들 import
+from libs.chunking.constants import (
     LANGCHAIN_CODE_LANGUAGE_MAP,
     HTML_TABLE_PATTERN,
     CHART_BLOCK_PATTERN,
@@ -40,12 +37,16 @@ from libs.chunking.chunking_helper import (
     TABLE_BASED_FILE_TYPES,
     TableRow,
     ParsedTable,
-    # table_parser
+)
+
+from libs.chunking.table_parser import (
     parse_html_table as _parse_html_table,
     extract_cell_spans as _extract_cell_spans,
     extract_cell_spans_with_positions as _extract_cell_spans_with_positions,
     has_complex_spans as _has_complex_spans,
-    # table_chunker
+)
+
+from libs.chunking.table_chunker import (
     calculate_available_space as _calculate_available_space,
     adjust_rowspan_in_chunk as _adjust_rowspan_in_chunk,
     build_table_chunk as _build_table_chunk,
@@ -53,7 +54,9 @@ from libs.chunking.chunking_helper import (
     split_table_into_chunks as _split_table_into_chunks,
     split_table_preserving_rowspan as _split_table_preserving_rowspan,
     chunk_large_table as _chunk_large_table,
-    # protected_regions
+)
+
+from libs.chunking.protected_regions import (
     find_protected_regions as _find_protected_regions,
     get_protected_region_positions as _get_protected_region_positions,
     ensure_protected_region_integrity as _ensure_protected_region_integrity,
@@ -61,12 +64,16 @@ from libs.chunking.chunking_helper import (
     split_large_chunk_with_protected_regions as _split_large_chunk_with_protected_regions,
     ensure_table_integrity as _ensure_table_integrity,
     split_large_chunk_with_table_protection as _split_large_chunk_with_table_protection,
-    # page_chunker
+)
+
+from libs.chunking.page_chunker import (
     split_into_pages as _split_into_pages,
     merge_pages as _merge_pages,
     get_overlap_content as _get_overlap_content,
     chunk_by_pages as _chunk_by_pages,
-    # text_chunker
+)
+
+from libs.chunking.text_chunker import (
     chunk_plain_text as _chunk_plain_text,
     chunk_text_without_tables,
     chunk_with_row_protection,
@@ -76,7 +83,9 @@ from libs.chunking.chunking_helper import (
     reconstruct_text_from_chunks,
     find_overlap_length,
     estimate_chunks_count,
-    # sheet_processor
+)
+
+from libs.chunking.sheet_processor import (
     extract_document_metadata as _extract_document_metadata,
     prepend_metadata_to_chunks as _prepend_metadata_to_chunks,
     extract_sheet_sections as _extract_sheet_sections,

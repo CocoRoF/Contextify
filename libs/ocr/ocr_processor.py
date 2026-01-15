@@ -1,4 +1,4 @@
-# libs/core/processor/ocr_processor.py
+# libs/ocr/ocr_processor.py
 # 이미지 파일을 로드하여 OCR 처리하는 모듈.
 import re
 import base64
