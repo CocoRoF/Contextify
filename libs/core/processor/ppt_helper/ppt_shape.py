@@ -4,19 +4,26 @@ PPT Shape 처리 모듈
 포함 함수:
 - get_shape_position(): Shape의 위치 정보 반환
 - is_picture_shape(): Shape이 이미지인지 확인
-- process_image_shape(): 이미지 Shape 처리 및 MinIO 업로드
+- process_image_shape(): 이미지 Shape 처리 및 로컬 저장
 - process_group_shape(): 그룹 Shape 처리
 """
 import logging
 from typing import List, Optional, Tuple
 
-from libs.core.functions.utils import upload_image_to_minio
+from libs.core.functions.img_processor import ImageProcessor
 
 from .ppt_constants import ElementType, SlideElement
 from .ppt_bullet import extract_text_with_bullets
 from .ppt_table import is_simple_table, extract_simple_table_as_text, convert_table_to_html
 
 logger = logging.getLogger("document-processor")
+
+# 모듈 레벨 이미지 프로세서
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[image:",
+    tag_suffix="]"
+)
 
 
 def get_shape_position(shape) -> Tuple[int, int, int, int]:
@@ -68,15 +75,14 @@ def is_picture_shape(shape) -> bool:
     return False
 
 
-def process_image_shape(shape, app_db, processed_images: set) -> Optional[str]:
+def process_image_shape(shape, processed_images: set) -> Optional[str]:
     """
-    이미지 Shape을 처리하고 MinIO에 업로드합니다.
+    이미지 Shape을 처리하고 로컬에 저장합니다.
 
-    공통 upload_image_to_minio 함수가 중복 체크 및 업로드를 처리합니다.
+    ImageProcessor가 중복 체크 및 저장을 처리합니다.
 
     Args:
         shape: python-pptx Shape 객체 (이미지)
-        app_db: 데이터베이스 연결
         processed_images: 이미 처리된 이미지 해시 집합
 
     Returns:
@@ -92,11 +98,11 @@ def process_image_shape(shape, app_db, processed_images: set) -> Optional[str]:
         if not image_bytes:
             return None
 
-        # MinIO에 업로드 (공통 함수가 중복 체크 및 processed_images 업데이트를 처리)
-        minio_path = upload_image_to_minio(image_bytes, app_db=app_db, processed_images=processed_images)
+        # 로컬에 저장 (ImageProcessor가 중복 체크 및 processed_images 업데이트를 처리)
+        image_tag = _image_processor.save_image(image_bytes, processed_images=processed_images)
 
-        if minio_path:
-            return f"\n[image:{minio_path}]\n"
+        if image_tag:
+            return f"\n{image_tag}\n"
 
         return None
 
@@ -105,13 +111,12 @@ def process_image_shape(shape, app_db, processed_images: set) -> Optional[str]:
         return None
 
 
-def process_group_shape(group_shape, app_db, processed_images: set) -> List[SlideElement]:
+def process_group_shape(group_shape, processed_images: set) -> List[SlideElement]:
     """
     그룹 Shape 내의 요소들을 처리합니다.
 
     Args:
         group_shape: python-pptx Group Shape 객체
-        app_db: 데이터베이스 연결
         processed_images: 이미 처리된 이미지 해시 집합
 
     Returns:
@@ -147,7 +152,7 @@ def process_group_shape(group_shape, app_db, processed_images: set) -> List[Slid
                         ))
 
             elif is_picture_shape(shape):
-                image_tag = process_image_shape(shape, app_db, processed_images)
+                image_tag = process_image_shape(shape, processed_images)
                 if image_tag:
                     elements.append(SlideElement(
                         element_type=ElementType.IMAGE,

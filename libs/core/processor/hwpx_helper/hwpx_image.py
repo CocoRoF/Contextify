@@ -2,7 +2,7 @@
 """
 HWPX 이미지 처리
 
-HWPX 문서의 이미지를 추출하고 MinIO에 업로드합니다.
+HWPX 문서의 이미지를 추출하고 로컬에 저장합니다.
 """
 import logging
 import os
@@ -11,34 +11,37 @@ from typing import List
 
 from .hwpx_constants import SUPPORTED_IMAGE_EXTENSIONS
 
-# hwp_helper에서 ImageHelper import
+# ImageProcessor import
 try:
-    from ..hwp_helper import ImageHelper
-    IMAGE_HELPER_AVAILABLE = True
+    from libs.core.functions.img_processor import ImageProcessor
+    _image_processor = ImageProcessor(
+        directory_path="temp/images",
+        tag_prefix="[image:",
+        tag_suffix="]"
+    )
+    IMAGE_PROCESSOR_AVAILABLE = True
 except ImportError:
-    IMAGE_HELPER_AVAILABLE = False
+    IMAGE_PROCESSOR_AVAILABLE = False
 
 logger = logging.getLogger("document-processor")
 
 
 async def process_hwpx_images(
     zf: zipfile.ZipFile,
-    image_files: List[str],
-    app_db=None
+    image_files: List[str]
 ) -> str:
     """
-    HWPX zip에서 이미지를 추출하고 MinIO에 업로드합니다.
+    HWPX zip에서 이미지를 추출하여 로컬에 저장합니다.
 
     Args:
         zf: 열린 ZipFile 객체
         image_files: 처리할 이미지 파일 경로 목록
-        app_db: 데이터베이스 연결
 
     Returns:
         이미지 태그 문자열들을 줄바꿈으로 연결한 결과
     """
-    if not IMAGE_HELPER_AVAILABLE:
-        logger.warning("ImageHelper not available, skipping image processing")
+    if not IMAGE_PROCESSOR_AVAILABLE:
+        logger.warning("ImageProcessor not available, skipping image processing")
         return ""
 
     results = []
@@ -50,9 +53,9 @@ async def process_hwpx_images(
                 with zf.open(img_path) as f:
                     image_data = f.read()
 
-                minio_path = ImageHelper.upload_image_to_minio(image_data, app_db=app_db)
-                if minio_path:
-                    results.append(f"[image:{minio_path}]")
+                image_tag = _image_processor.save_image(image_data)
+                if image_tag:
+                    results.append(image_tag)
 
             except Exception as e:
                 logger.warning(f"Error processing HWPX image {img_path}: {e}")

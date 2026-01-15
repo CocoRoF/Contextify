@@ -20,12 +20,13 @@ Core - 문서 처리 핵심 모듈
     - ocr_processor: OCR 처리
 - functions/: 유틸리티 함수
     - utils: 텍스트 정리, 코드 정리 등 공통 유틸리티
+    - img_processor: 이미지 처리 및 저장 (ImageProcessor 클래스)
     - ppt2pdf: PPT to PDF 변환
 
 사용 예시:
     from libs.core import DocumentProcessor
     from libs.core.processor import extract_text_from_pdf, extract_text_from_docx
-    from libs.core.functions import clean_text, clean_code_text
+    from libs.core.functions import clean_text, ImageProcessor, save_image_to_file
 """
 
 # === 메인 클래스 ===
@@ -36,6 +37,12 @@ from libs.core.functions.utils import (
     clean_text,
     clean_code_text,
     sanitize_text_for_json,
+)
+
+# === 이미지 처리 ===
+from libs.core.functions.img_processor import (
+    ImageProcessor,
+    save_image_to_file,
 )
 
 # === 서브패키지 명시적 import ===
@@ -49,6 +56,9 @@ __all__ = [
     "clean_text",
     "clean_code_text",
     "sanitize_text_for_json",
+    # 이미지 처리
+    "ImageProcessor",
+    "save_image_to_file",
     # 서브패키지
     "processor",
     "functions",

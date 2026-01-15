@@ -12,7 +12,14 @@ import struct
 import logging
 from typing import List, Tuple, Optional
 
-from libs.core.processor.hwp_helper.hwp_image import upload_image_to_minio
+from libs.core.functions.img_processor import ImageProcessor
+
+# 모듈 레벨 이미지 프로세서
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[image:",
+    tag_suffix="]"
+)
 
 logger = logging.getLogger("document-processor")
 
@@ -121,13 +128,12 @@ def find_zlib_streams(raw_data: bytes, min_size: int = 50) -> List[Tuple[int, by
     return decompressed_chunks
 
 
-async def recover_images_from_raw(raw_data: bytes, app_db=None) -> str:
+async def recover_images_from_raw(raw_data: bytes) -> str:
     """
-    raw 바이너리 데이터에서 이미지 시그니처(JPEG, PNG)를 스캔하여 MinIO에 업로드합니다.
+    raw 바이너리 데이터에서 이미지 시그니처(JPEG, PNG)를 스캔하여 로컬에 저장합니다.
 
     Args:
         raw_data: 바이너리 데이터
-        app_db: 데이터베이스 연결
 
     Returns:
         이미지 태그들을 결합한 문자열
@@ -151,9 +157,9 @@ async def recover_images_from_raw(raw_data: bytes, app_db=None) -> str:
         if 100 < size < 10 * 1024 * 1024:
             img_data = raw_data[start:end]
 
-            minio_path = upload_image_to_minio(img_data, app_db=app_db)
-            if minio_path:
-                results.append(f"[image:{minio_path}]")
+            image_tag = _image_processor.save_image(img_data)
+            if image_tag:
+                results.append(image_tag)
 
         start = end
 
@@ -177,9 +183,9 @@ async def recover_images_from_raw(raw_data: bytes, app_db=None) -> str:
         if 100 < size < 10 * 1024 * 1024:
             img_data = raw_data[start:end]
 
-            minio_path = upload_image_to_minio(img_data, app_db=app_db)
-            if minio_path:
-                results.append(f"[image:{minio_path}]")
+            image_tag = _image_processor.save_image(img_data)
+            if image_tag:
+                results.append(image_tag)
 
         start = end
 

@@ -6,7 +6,7 @@ DOCX Handler - DOCX 문서 처리기
 - 메타데이터 추출 (제목, 작성자, 주제, 키워드, 작성일, 수정일 등)
 - 텍스트 추출 (python-docx를 통한 직접 파싱)
 - 테이블 추출 (HTML 형식 보존, rowspan/colspan 지원)
-- 인라인 이미지 추출 및 MinIO 업로드
+- 인라인 이미지 추출 및 로컬 저장
 - 차트 데이터 추출 (OOXML DrawingML Chart 파싱)
 - 다이어그램 처리
 
@@ -45,7 +45,6 @@ logger = logging.getLogger("document-processor")
 async def extract_text_from_docx(
     file_path: str,
     current_config: Dict[str, Any] = None,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -54,7 +53,6 @@ async def extract_text_from_docx(
     Args:
         file_path: DOCX 파일 경로
         current_config: 설정 딕셔너리
-        app_db: 데이터베이스 연결 (이미지 메타데이터 저장용)
         extract_default_metadata: 메타데이터 추출 여부 (기본값: True)
 
     Returns:
@@ -66,14 +64,13 @@ async def extract_text_from_docx(
     logger.info(f"DOCX processing: {file_path}")
 
     # 모든 경우에 enhanced 처리 사용
-    return await _extract_docx_enhanced(file_path, app_db, extract_default_metadata)
+    return await _extract_docx_enhanced(file_path, extract_default_metadata)
 
 
 # === 고도화된 DOCX 처리 ===
 
 async def _extract_docx_enhanced(
     file_path: str,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -81,7 +78,7 @@ async def _extract_docx_enhanced(
 
     - 문서 순서 보존 (body 요소 순회)
     - 메타데이터 추출
-    - 인라인 이미지 추출 및 MinIO 업로드
+    - 인라인 이미지 추출 및 로컬 저장
     - 테이블 HTML 형식 보존 (셀 병합 지원)
     - 차트 데이터 추출 (OOXML DrawingML Chart 파싱)
     - 페이지 구분 처리
@@ -116,7 +113,7 @@ async def _extract_docx_enhanced(
             if local_tag == 'p':
                 # Paragraph 처리 (분리된 함수 사용)
                 content, has_page_break, img_count, chart_count = process_paragraph_element(
-                    body_elem, doc, app_db, processed_images, file_path
+                    body_elem, doc, processed_images, file_path
                 )
 
                 # 페이지 브레이크 처리

@@ -9,7 +9,7 @@ DOC Handler - 구형 Microsoft Word 문서 처리기
 - 메타데이터 추출 (제목, 작성자, 주제, 키워드, 작성일, 수정일 등)
 - 텍스트 추출 및 정리
 - 테이블 추출 (HTML 형식 보존)
-- 인라인 이미지 추출 및 MinIO 업로드
+- 인라인 이미지 추출 및 로컬 저장
 - LibreOffice 변환 폴백 (모든 형식 지원)
 
 구형 DOC 파일 유형:
@@ -46,7 +46,14 @@ except ImportError:
 
 # 커스텀 RTF 파서 (바이너리 직접 분석)
 from libs.core.processor.doc_helpers.rtf_parser import parse_rtf, RTFDocument
-from libs.core.functions.utils import upload_image_to_minio
+from libs.core.functions.img_processor import ImageProcessor
+
+# 모듈 레벨 이미지 프로세서
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[image:",
+    tag_suffix="]"
+)
 
 logger = logging.getLogger("document-processor")
 
@@ -289,7 +296,6 @@ def _clean_rtf_text(text: str) -> str:
 
 async def _extract_text_from_rtf(
     file_path: str,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -299,7 +305,7 @@ async def _extract_text_from_rtf(
     LibreOffice 없이 순수 Python으로 처리합니다.
 
     v3 개선사항:
-    - \\bin 태그의 바이너리 데이터 처리 (이미지 MinIO 업로드)
+    - \\bin 태그의 바이너리 데이터 처리 (이미지 로컬 저장)
     - 테이블이 원래 위치에 인라인으로 배치됨
     - 병합 셀 처리 (colspan/rowspan)
     - 내용 유실 방지
@@ -307,7 +313,6 @@ async def _extract_text_from_rtf(
 
     Args:
         file_path: RTF 파일 경로
-        app_db: 데이터베이스 연결
         extract_default_metadata: 메타데이터 추출 여부 (기본값: True)
 
     Returns:
@@ -324,7 +329,7 @@ async def _extract_text_from_rtf(
         processed_images: Set[str] = set()
 
         # RTF 파서로 처리 (v3: 바이너리 이미지 자동 처리)
-        doc = parse_rtf(content, app_db=app_db, processed_images=processed_images)
+        doc = parse_rtf(content, processed_images=processed_images)
 
         result_parts = []
 
@@ -398,17 +403,16 @@ async def _extract_text_from_rtf(
         # 폴백: striprtf 라이브러리 사용
         if STRIPRTF_AVAILABLE:
             try:
-                return await _extract_text_from_rtf_fallback(file_path, app_db)
+                return await _extract_text_from_rtf_fallback(file_path)
             except Exception as e2:
                 logger.error(f"striprtf fallback also failed: {e2}")
 
         # 최종 폴백: LibreOffice 변환
-        return await _convert_with_libreoffice(file_path, app_db)
+        return await _convert_with_libreoffice(file_path)
 
 
 async def _extract_text_from_rtf_fallback(
     file_path: str,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -416,7 +420,6 @@ async def _extract_text_from_rtf_fallback(
 
     Args:
         file_path: RTF 파일 경로
-        app_db: 데이터베이스 연결
         extract_default_metadata: 메타데이터 추출 여부 (기본값: True)
 
     Returns:
@@ -634,7 +637,7 @@ def _extract_text_from_word_binary(data: bytes) -> str:
         return ""
 
 
-def _extract_ole_images(ole: olefile.OleFileIO, app_db, processed_images: Set[str]) -> List[str]:
+def _extract_ole_images(ole: olefile.OleFileIO, processed_images: Set[str]) -> List[str]:
     """
     OLE Compound Document에서 이미지를 추출합니다.
 
@@ -642,7 +645,6 @@ def _extract_ole_images(ole: olefile.OleFileIO, app_db, processed_images: Set[st
 
     Args:
         ole: olefile.OleFileIO 객체
-        app_db: 데이터베이스 연결
         processed_images: 처리된 이미지 해시 집합
 
     Returns:
@@ -674,11 +676,11 @@ def _extract_ole_images(ole: olefile.OleFileIO, app_db, processed_images: Set[st
                     else:
                         continue
 
-                    # MinIO에 업로드
-                    minio_path = upload_image_to_minio(data, app_db=app_db, processed_images=processed_images)
+                    # 로컬에 저장
+                    image_tag = _image_processor.save_image(data)
 
-                    if minio_path:
-                        images.append(f"\n[image:{minio_path}]\n")
+                    if image_tag:
+                        images.append(f"\n{image_tag}\n")
                     else:
                         images.append("[이미지]")
 
@@ -694,7 +696,6 @@ def _extract_ole_images(ole: olefile.OleFileIO, app_db, processed_images: Set[st
 
 async def _extract_text_from_ole(
     file_path: str,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -705,7 +706,6 @@ async def _extract_text_from_ole(
 
     Args:
         file_path: DOC 파일 경로
-        app_db: 데이터베이스 연결
         extract_default_metadata: 메타데이터 추출 여부 (기본값: True)
 
     Returns:
@@ -727,7 +727,7 @@ async def _extract_text_from_ole(
                     logger.info(f"OLE metadata extracted: {list(metadata.keys())}")
 
             # 이미지 추출
-            images = _extract_ole_images(ole, app_db, processed_images)
+            images = _extract_ole_images(ole, processed_images)
 
     except Exception as e:
         logger.warning(f"Error reading OLE file: {e}")
@@ -736,7 +736,7 @@ async def _extract_text_from_ole(
 
     # LibreOffice로 텍스트 변환
     try:
-        converted_text = await _convert_with_libreoffice(file_path, app_db, skip_metadata=True, extract_default_metadata=extract_default_metadata)
+        converted_text = await _convert_with_libreoffice(file_path, skip_metadata=True, extract_default_metadata=extract_default_metadata)
 
         if converted_text:
             result_parts.append("<페이지 번호> 1 </페이지 번호>\n")
@@ -774,7 +774,6 @@ async def _extract_text_from_ole(
 
 async def _extract_text_from_html_doc(
     file_path: str,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -785,7 +784,6 @@ async def _extract_text_from_html_doc(
 
     Args:
         file_path: DOC 파일 경로
-        app_db: 데이터베이스 연결
         extract_default_metadata: 메타데이터 추출 여부 (기본값: True)
 
     Returns:
@@ -863,9 +861,9 @@ async def _extract_text_from_html_doc(
                         match = re.match(r'data:image/(\w+);base64,(.+)', src)
                         if match:
                             image_data = base64.b64decode(match.group(2))
-                            minio_path = upload_image_to_minio(image_data, app_db=app_db, processed_images=processed_images)
-                            if minio_path:
-                                result_parts.append(f"\n[image:{minio_path}]\n")
+                            image_tag = _image_processor.save_image(image_data)
+                            if image_tag:
+                                result_parts.append(f"\n{image_tag}\n")
                             else:
                                 result_parts.append("[이미지]")
                     except Exception as e:
@@ -883,7 +881,7 @@ async def _extract_text_from_html_doc(
         logger.error(f"Error processing HTML DOC: {e}")
         logger.debug(traceback.format_exc())
         # 폴백: LibreOffice 변환
-        return await _convert_with_libreoffice(file_path, app_db)
+        return await _convert_with_libreoffice(file_path)
 
 
 def _extract_html_metadata(soup: BeautifulSoup) -> Dict[str, Any]:
@@ -927,7 +925,6 @@ def _extract_html_metadata(soup: BeautifulSoup) -> Dict[str, Any]:
 
 async def _convert_with_libreoffice(
     file_path: str,
-    app_db=None,
     skip_metadata: bool = False,
     extract_default_metadata: bool = True
 ) -> str:
@@ -938,7 +935,6 @@ async def _convert_with_libreoffice(
 
     Args:
         file_path: DOC 파일 경로
-        app_db: 데이터베이스 연결
         skip_metadata: 메타데이터 추출 건너뛰기 (이미 추출된 경우)
         extract_default_metadata: 메타데이터 추출 여부 (기본값: True)
 
@@ -1039,9 +1035,9 @@ async def _convert_with_libreoffice(
                             match = re.match(r'data:image/(\w+);base64,(.+)', src)
                             if match:
                                 image_data = base64.b64decode(match.group(2))
-                                minio_path = upload_image_to_minio(image_data, app_db=app_db, processed_images=processed_images)
-                                if minio_path:
-                                    result_parts.append(f"\n[image:{minio_path}]\n")
+                                image_tag = _image_processor.save_image(image_data)
+                                if image_tag:
+                                    result_parts.append(f"\n{image_tag}\n")
                         except:
                             pass
 
@@ -1077,7 +1073,6 @@ async def _convert_with_libreoffice(
 
 async def _extract_text_from_docx_misnamed(
     file_path: str,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -1087,7 +1082,6 @@ async def _extract_text_from_docx_misnamed(
 
     Args:
         file_path: DOC 파일 경로
-        app_db: 데이터베이스 연결
         extract_default_metadata: 기본 메타데이터 추출 여부 (기본값: True)
 
     Returns:
@@ -1106,7 +1100,7 @@ async def _extract_text_from_docx_misnamed(
 
         try:
             # docx_handler로 처리
-            result = await extract_text_from_docx(temp_path, None, app_db, extract_default_metadata)
+            result = await extract_text_from_docx(temp_path, None, extract_default_metadata)
             logger.info(f"Misnamed DOCX processing completed")
             return result
         finally:
@@ -1125,7 +1119,6 @@ async def _extract_text_from_docx_misnamed(
 async def extract_text_from_doc(
     file_path: str,
     current_config: Dict[str, Any] = None,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -1137,7 +1130,6 @@ async def extract_text_from_doc(
     Args:
         file_path: DOC 파일 경로
         current_config: 설정 딕셔너리
-        app_db: 데이터베이스 연결 (이미지 메타데이터 저장용)
         extract_default_metadata: 메타데이터 추출 여부 (기본값: True)
 
     Returns:
@@ -1159,24 +1151,24 @@ async def extract_text_from_doc(
     try:
         if doc_format == DocFormat.RTF:
             # RTF 형식 처리
-            return await _extract_text_from_rtf(file_path, app_db, extract_default_metadata)
+            return await _extract_text_from_rtf(file_path, extract_default_metadata)
 
         elif doc_format == DocFormat.OLE:
             # OLE Compound Document 처리
-            return await _extract_text_from_ole(file_path, app_db, extract_default_metadata)
+            return await _extract_text_from_ole(file_path, extract_default_metadata)
 
         elif doc_format == DocFormat.HTML:
             # HTML 형식 처리
-            return await _extract_text_from_html_doc(file_path, app_db, extract_default_metadata)
+            return await _extract_text_from_html_doc(file_path, extract_default_metadata)
 
         elif doc_format == DocFormat.DOCX:
             # 잘못된 확장자의 DOCX 처리
-            return await _extract_text_from_docx_misnamed(file_path, app_db, extract_default_metadata)
+            return await _extract_text_from_docx_misnamed(file_path, extract_default_metadata)
 
         else:
             # 알 수 없는 형식 - LibreOffice 변환 시도
             logger.warning(f"Unknown DOC format, trying LibreOffice conversion")
-            return await _convert_with_libreoffice(file_path, app_db, extract_default_metadata)
+            return await _convert_with_libreoffice(file_path, extract_default_metadata)
 
     except Exception as e:
         logger.error(f"Error in DOC processing: {e}")
@@ -1184,7 +1176,7 @@ async def extract_text_from_doc(
 
         # 최종 폴백: LibreOffice 변환
         try:
-            return await _convert_with_libreoffice(file_path, app_db, extract_default_metadata)
+            return await _convert_with_libreoffice(file_path, extract_default_metadata)
         except Exception as e2:
             logger.error(f"LibreOffice fallback also failed: {e2}")
             return f"[DOC 파일 처리 실패: {str(e)}]"

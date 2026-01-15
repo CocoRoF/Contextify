@@ -82,17 +82,14 @@ class RTFParser:
     def __init__(
         self,
         encoding: str = "cp949",
-        app_db=None,
         processed_images: Optional[Set[str]] = None
     ):
         """
         Args:
             encoding: 기본 인코딩 (한글 문서는 보통 cp949)
-            app_db: 데이터베이스 연결 (이미지 MinIO 업로드용)
             processed_images: 처리된 이미지 해시 집합 (중복 방지)
         """
         self.encoding = encoding
-        self.app_db = app_db
         self.processed_images = processed_images if processed_images is not None else set()
         self.document = RTFDocument(encoding=encoding)
 
@@ -116,7 +113,6 @@ class RTFParser:
         # 바이너리 데이터 전처리 (\bin 태그 처리, 이미지 추출)
         clean_content, self._image_tags = preprocess_rtf_binary(
             content,
-            app_db=self.app_db,
             processed_images=self.processed_images
         )
 
@@ -162,18 +158,16 @@ class RTFParser:
 def parse_rtf(
     content: bytes,
     encoding: str = "cp949",
-    app_db=None,
     processed_images: Optional[Set[str]] = None
 ) -> RTFDocument:
     """
     RTF 파일을 파싱합니다.
 
-    바이너리 이미지 데이터를 MinIO에 업로드하고 태그로 변환합니다.
+    바이너리 이미지 데이터를 로컬에 저장하고 태그로 변환합니다.
 
     Args:
         content: RTF 파일 바이트 데이터
         encoding: 기본 인코딩
-        app_db: 데이터베이스 연결 (이미지 MinIO 업로드용, optional)
         processed_images: 처리된 이미지 해시 집합 (중복 방지, optional)
 
     Returns:
@@ -181,7 +175,6 @@ def parse_rtf(
     """
     parser = RTFParser(
         encoding=encoding,
-        app_db=app_db,
         processed_images=processed_images
     )
     return parser.parse(content)

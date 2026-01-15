@@ -24,7 +24,6 @@ logger = logging.getLogger("document-processor")
 def process_drawing_element(
     drawing_elem,
     doc: Document,
-    app_db,
     processed_images: Set[str],
     file_path: str = None
 ) -> Tuple[str, Optional[ElementType]]:
@@ -34,7 +33,6 @@ def process_drawing_element(
     Args:
         drawing_elem: drawing XML 요소
         doc: python-docx Document 객체
-        app_db: 데이터베이스 연결
         processed_images: 처리된 이미지 경로 집합 (중복 방지)
         file_path: 원본 파일 경로
 
@@ -63,7 +61,7 @@ def process_drawing_element(
 
         # 이미지인 경우
         if 'picture' in uri.lower():
-            return extract_image_from_drawing(graphic_data, doc, app_db, processed_images)
+            return extract_image_from_drawing(graphic_data, doc, processed_images)
 
         # 차트인 경우
         if 'chart' in uri.lower():

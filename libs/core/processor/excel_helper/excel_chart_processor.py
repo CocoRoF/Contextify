@@ -17,7 +17,6 @@ logger = logging.getLogger("document-processor")
 
 def process_chart(
     chart_info: Dict[str, Any],
-    app_db=None,
     processed_images: Set[str] = None,
     upload_func=None
 ) -> str:
@@ -25,11 +24,10 @@ def process_chart(
     차트를 처리합니다.
 
     1순위: 데이터를 표(테이블)로 변환 - LLM이 직접 해석 가능
-    2순위: 실패 시 matplotlib로 이미지 생성 후 MinIO 업로드
+    2순위: 실패 시 matplotlib로 이미지 생성 후 로컬 저장
 
     Args:
         chart_info: 차트 정보 딕셔너리
-        app_db: 데이터베이스 연결
         processed_images: 이미 처리된 이미지 해시 집합
         upload_func: 이미지 업로드 함수
 
@@ -43,7 +41,7 @@ def process_chart(
         return table_result
 
     # 2순위: 이미지로 렌더링
-    image_result = render_chart_to_image(chart_info, app_db, processed_images, upload_func)
+    image_result = render_chart_to_image(chart_info, processed_images, upload_func)
     if image_result:
         logger.debug("Chart rendered to image successfully")
         return image_result

@@ -10,7 +10,7 @@ PPT Handler - PPT/PPTX 문서 처리기
 - 메타데이터 추출 (제목, 작성자, 생성일, 수정일 등)
 - 텍스트 추출 (python-pptx를 통한 직접 파싱)
 - 테이블 추출 (HTML 형식 보존, rowspan/colspan 지원)
-- 인라인 이미지 추출 및 MinIO 업로드
+- 인라인 이미지 추출 및 로컬 저장
 - 차트 데이터 추출 (카테고리, 시리즈, 값)
 
 모든 처리는 python-pptx를 통한 직접 Binary 파싱으로 수행됩니다.
@@ -54,7 +54,6 @@ logger = logging.getLogger("document-processor")
 async def extract_text_from_ppt(
     file_path: str,
     current_config: Dict[str, Any] = None,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -65,7 +64,6 @@ async def extract_text_from_ppt(
     Args:
         file_path: PPT/PPTX 파일 경로
         current_config: 설정 딕셔너리 (현재 사용하지 않음)
-        app_db: 데이터베이스 연결 (이미지 메타데이터 저장용)
         extract_default_metadata: 기본 메타데이터 추출 여부 (기본값: True)
 
     Returns:
@@ -74,28 +72,26 @@ async def extract_text_from_ppt(
     logger.info(f"PPT processing: {file_path}")
 
     # enhanced가 기본이며, 모든 경우에 고도화된 파싱 사용
-    return await _extract_ppt_enhanced(file_path, app_db, extract_default_metadata)
+    return await _extract_ppt_enhanced(file_path, extract_default_metadata)
 
 
 # === 고도화된 PPT 처리 함수들 ===
 
 async def _extract_ppt_enhanced(
     file_path: str,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
     고도화된 PPT 처리.
 
     - 메타데이터 추출 (제목, 작성자, 생성일 등)
-    - 인라인 이미지 추출 및 MinIO 업로드
+    - 인라인 이미지 추출 및 로컬 저장
     - 테이블 HTML 형식 보존 (셀 병합 지원)
     - 차트 데이터 추출 (카테고리, 시리즈, 값)
     - 슬라이드 요소 위치 기반 정렬
 
     Args:
         file_path: PPT/PPTX 파일 경로
-        app_db: 데이터베이스 연결
         extract_default_metadata: 기본 메타데이터 추출 여부 (기본값: True)
     """
     logger.info(f"Enhanced PPT processing: {file_path}")
@@ -154,7 +150,7 @@ async def _extract_ppt_enhanced(
 
                     # 이미지 처리 (using helper)
                     elif is_picture_shape(shape):
-                        image_tag = process_image_shape(shape, app_db, processed_images)
+                        image_tag = process_image_shape(shape, processed_images)
                         if image_tag:
                             total_images += 1
                             elements.append(SlideElement(
@@ -185,7 +181,7 @@ async def _extract_ppt_enhanced(
                                 position=position,
                                 shape_id=shape_id
                             ))
-                    
+
                     # 기존 text 속성만 있는 경우 (폴백)
                     elif hasattr(shape, "text") and shape.text.strip():
                         elements.append(SlideElement(
@@ -197,7 +193,7 @@ async def _extract_ppt_enhanced(
 
                     # 그룹 Shape 처리 (using helper)
                     elif hasattr(shape, "shapes"):
-                        group_elements = process_group_shape(shape, app_db, processed_images)
+                        group_elements = process_group_shape(shape, processed_images)
                         elements.extend(group_elements)
 
                 except Exception as shape_e:

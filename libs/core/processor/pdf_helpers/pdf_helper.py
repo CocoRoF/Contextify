@@ -1,4 +1,4 @@
-# service/document_processor/processor/pdf_helper.py
+# libs/core/processor/pdf_helpers/pdf_helper.py
 """
 PDF 처리 공통 헬퍼 모듈
 
@@ -14,17 +14,17 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image
 
-from service.storage.minio_client import (
-    get_minio_client,
-    upload_file,
-    ensure_bucket_exists,
-    DEFAULT_BUCKET_NAME
-)
-
-# 공통 upload_image_to_minio 함수 import
-from libs.core.functions.utils import upload_image_to_minio
+# 이미지 처리 모듈
+from libs.core.functions.img_processor import ImageProcessor
 
 logger = logging.getLogger("document-processor")
+
+# 모듈 레벨 이미지 프로세서
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[image:",
+    tag_suffix="]"
+)
 
 
 # ============================================================================

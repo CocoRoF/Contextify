@@ -1,12 +1,12 @@
-# service/document_processor/processor/hwp_helper/hwp_image.py
+# libs/core/processor/hwp_helper/hwp_image.py
 """
 HWP 이미지 처리 유틸리티
 
-HWP 5.0 OLE 파일에서 이미지를 추출하고 MinIO에 업로드합니다.
+HWP 5.0 OLE 파일에서 이미지를 추출하고 로컬에 저장합니다.
 - try_decompress_image: zlib 압축 이미지 해제
 - find_bindata_stream: BinData 스트림 경로 찾기
 - extract_bindata_index: SHAPE_COMPONENT_PICTURE에서 BinData 인덱스 추출
-- extract_and_upload_image: 이미지 추출 및 MinIO 업로드
+- extract_and_upload_image: 이미지 추출 및 로컬 저장
 - process_images_from_bindata: BinData에서 모든 이미지 추출
 """
 import io
@@ -20,9 +20,16 @@ from typing import Optional, List, Dict, Set
 import olefile
 from PIL import Image
 
-from libs.core.functions.utils import upload_image_to_minio as _upload_image_to_minio
+from libs.core.functions.img_processor import ImageProcessor
 
 logger = logging.getLogger("document-processor")
+
+# 모듈 레벨 이미지 프로세서
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[image:",
+    tag_suffix="]"
+)
 
 
 def try_decompress_image(data: bytes) -> bytes:
@@ -62,18 +69,17 @@ def try_decompress_image(data: bytes) -> bytes:
     return data
 
 
-def upload_image_to_minio(image_data: bytes, app_db=None) -> Optional[str]:
+def save_image_to_local(image_data: bytes) -> Optional[str]:
     """
-    이미지를 MinIO에 업로드합니다.
+    이미지를 로컬에 저장합니다.
 
     Args:
         image_data: 이미지 바이너리 데이터
-        app_db: 데이터베이스 연결 (메타데이터 저장용)
 
     Returns:
-        업로드된 이미지의 MinIO 경로 또는 None
+        이미지 태그 문자열 또는 None
     """
-    return _upload_image_to_minio(image_data, app_db=app_db, processed_images=None)
+    return _image_processor.save_image(image_data)
 
 
 def find_bindata_stream(ole: olefile.OleFileIO, storage_id: int, ext: str) -> Optional[List[str]]:
@@ -186,16 +192,14 @@ def extract_bindata_index(payload: bytes, bin_data_list_len: int) -> Optional[in
 def extract_and_upload_image(
     ole: olefile.OleFileIO,
     target_stream: List[str],
-    app_db=None,
     processed_images: Optional[Set[str]] = None
 ) -> Optional[str]:
     """
-    OLE 스트림에서 이미지를 추출하여 MinIO에 업로드합니다.
+    OLE 스트림에서 이미지를 추출하여 로컬에 저장합니다.
 
     Args:
         ole: OLE 파일 객체
         target_stream: 스트림 경로
-        app_db: 데이터베이스 연결
         processed_images: 처리된 이미지 경로 집합
 
     Returns:
@@ -206,12 +210,12 @@ def extract_and_upload_image(
         image_data = stream.read()
         image_data = try_decompress_image(image_data)
 
-        minio_path = upload_image_to_minio(image_data, app_db)
-        if minio_path:
+        image_tag = save_image_to_local(image_data)
+        if image_tag:
             if processed_images is not None:
                 processed_images.add("/".join(target_stream))
-            logger.info(f"Successfully extracted inline image: {minio_path}")
-            return f"\n[image:{minio_path}]\n"
+            logger.info(f"Successfully extracted inline image: {image_tag}")
+            return f"\n{image_tag}\n"
     except Exception as e:
         logger.warning(f"Failed to process inline HWP image {target_stream}: {e}")
         logger.debug(traceback.format_exc())
@@ -221,15 +225,13 @@ def extract_and_upload_image(
 
 async def process_images_from_bindata(
     ole: olefile.OleFileIO,
-    app_db=None,
     processed_images: Optional[Set[str]] = None
 ) -> str:
     """
-    BinData 스토리지에서 이미지를 추출하여 MinIO에 업로드합니다.
+    BinData 스토리지에서 이미지를 추출하여 로컬에 저장합니다.
 
     Args:
         ole: OLE 파일 객체
-        app_db: 데이터베이스 연결
         processed_images: 이미 처리된 이미지 경로 집합 (스킵용)
 
     Returns:
@@ -254,9 +256,9 @@ async def process_images_from_bindata(
                 image_data = stream.read()
                 image_data = try_decompress_image(image_data)
 
-                minio_path = upload_image_to_minio(image_data, app_db=app_db)
-                if minio_path:
-                    results.append(f"[image:{minio_path}]")
+                image_tag = save_image_to_local(image_data)
+                if image_tag:
+                    results.append(image_tag)
 
     except Exception as e:
         logger.warning(f"Error processing HWP images: {e}")
@@ -264,22 +266,21 @@ async def process_images_from_bindata(
     return "\n\n".join(results)
 
 
-# 하위 호환성을 위한 클래스 래퍼
 class ImageHelper:
-    """HWP 이미지 처리 유틸리티 (하위 호환성)"""
+    """HWP 이미지 처리 유틸리티"""
 
     @staticmethod
     def try_decompress_image(data: bytes) -> bytes:
         return try_decompress_image(data)
 
     @staticmethod
-    def upload_image_to_minio(image_data: bytes, app_db=None) -> Optional[str]:
-        return upload_image_to_minio(image_data, app_db)
+    def save_image_to_local(image_data: bytes) -> Optional[str]:
+        return save_image_to_local(image_data)
 
 
 __all__ = [
     'try_decompress_image',
-    'upload_image_to_minio',
+    'save_image_to_local',
     'find_bindata_stream',
     'extract_bindata_index',
     'extract_and_upload_image',

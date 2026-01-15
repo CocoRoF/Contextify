@@ -23,18 +23,16 @@ except ImportError:
 
 def render_chart_to_image(
     chart_info: Dict[str, Any],
-    app_db=None,
     processed_images: Set[str] = None,
     upload_func=None
 ) -> Optional[str]:
     """
-    차트 데이터를 matplotlib로 이미지로 렌더링하고 MinIO에 업로드합니다.
+    차트 데이터를 matplotlib로 이미지로 렌더링하고 로컬에 저장합니다.
 
     테이블 변환 실패 시 폴백으로 사용됩니다.
 
     Args:
         chart_info: 차트 정보 딕셔너리
-        app_db: 데이터베이스 연결
         processed_images: 이미 처리된 이미지 해시 집합
         upload_func: 이미지 업로드 함수
 
@@ -81,20 +79,20 @@ def render_chart_to_image(
         img_data = img_buffer.getvalue()
         plt.close(fig)
 
-        # MinIO에 업로드
+        # 로컬에 저장
         if processed_images is None:
             processed_images = set()
 
         if upload_func:
-            minio_path = upload_func(img_data, app_db=app_db, processed_images=processed_images)
+            image_tag = upload_func(img_data)
 
-            if minio_path:
+            if image_tag:
                 result_parts = ["[chart]"]
                 if title:
                     result_parts.append(f"제목: {title}")
                 if chart_type:
                     result_parts.append(f"유형: {chart_type}")
-                result_parts.append(f"[image:{minio_path}]")
+                result_parts.append(image_tag)
                 result_parts.append("[/chart]")
                 return "\n".join(result_parts)
 

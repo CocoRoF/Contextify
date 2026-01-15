@@ -12,12 +12,17 @@ from typing import Dict, Set, Optional
 from .hwpx_constants import HWPX_NAMESPACES
 from .hwpx_table import parse_hwpx_table
 
-# hwp_helper에서 ImageHelper import
+# ImageProcessor import
 try:
-    from ..hwp_helper import ImageHelper
-    IMAGE_HELPER_AVAILABLE = True
+    from libs.core.functions.img_processor import ImageProcessor
+    _image_processor = ImageProcessor(
+        directory_path="temp/images",
+        tag_prefix="[image:",
+        tag_suffix="]"
+    )
+    IMAGE_PROCESSOR_AVAILABLE = True
 except ImportError:
-    IMAGE_HELPER_AVAILABLE = False
+    IMAGE_PROCESSOR_AVAILABLE = False
 
 logger = logging.getLogger("document-processor")
 
@@ -26,7 +31,6 @@ def parse_hwpx_section(
     xml_content: bytes,
     zf: zipfile.ZipFile = None,
     bin_item_map: Dict[str, str] = None,
-    app_db=None,
     processed_images: Set[str] = None
 ) -> str:
     """
@@ -44,7 +48,6 @@ def parse_hwpx_section(
         xml_content: 섹션 XML 바이너리 데이터
         zf: ZipFile 객체 (이미지 추출용)
         bin_item_map: BinItem ID -> 파일 경로 매핑
-        app_db: 데이터베이스 연결
         processed_images: 처리된 이미지 경로 집합 (중복 방지)
 
     Returns:
@@ -84,9 +87,9 @@ def parse_hwpx_section(
 
                     # Image (hc:pic)
                     pic = ctrl.find('hc:pic', ns)
-                    if pic is not None and zf and bin_item_map and IMAGE_HELPER_AVAILABLE:
+                    if pic is not None and zf and bin_item_map and IMAGE_PROCESSOR_AVAILABLE:
                         image_text = _process_inline_image(
-                            pic, zf, bin_item_map, app_db, processed_images
+                            pic, zf, bin_item_map, processed_images
                         )
                         if image_text:
                             p_text.append(image_text)
@@ -105,7 +108,6 @@ def _process_inline_image(
     pic: ET.Element,
     zf: zipfile.ZipFile,
     bin_item_map: Dict[str, str],
-    app_db,
     processed_images: Optional[Set[str]]
 ) -> str:
     """
@@ -115,7 +117,6 @@ def _process_inline_image(
         pic: hc:pic 요소
         zf: ZipFile 객체
         bin_item_map: BinItem ID -> 파일 경로 매핑
-        app_db: 데이터베이스 연결
         processed_images: 처리된 이미지 경로 집합
 
     Returns:
@@ -140,11 +141,11 @@ def _process_inline_image(
         with zf.open(full_path) as f:
             image_data = f.read()
 
-        minio_path = ImageHelper.upload_image_to_minio(image_data, app_db)
-        if minio_path:
+        image_tag = _image_processor.save_image(image_data)
+        if image_tag:
             if processed_images is not None:
                 processed_images.add(full_path)
-            return f"\n[image:{minio_path}]\n"
+            return f"\n{image_tag}\n"
 
     except Exception as e:
         logger.warning(f"Failed to process inline image: {e}")

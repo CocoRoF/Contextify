@@ -70,13 +70,12 @@ class HwpProcessor:
     # Main Entry Point
     # ==========================================================================
 
-    async def process(self, file_path: str, app_db=None, extract_default_metadata: bool = True) -> str:
+    async def process(self, file_path: str, extract_default_metadata: bool = True) -> str:
         """
         HWP (5.0 OLE) 파일을 처리합니다.
 
         Args:
             file_path: HWP 파일 경로
-            app_db: 데이터베이스 연결
             extract_default_metadata: 기본 메타데이터 추출 여부 (기본값: True)
 
         Returns:
@@ -84,7 +83,7 @@ class HwpProcessor:
         """
         # OLE 파일인지 확인
         if not olefile.isOleFile(file_path):
-            return await self._handle_non_ole_file(file_path, app_db, extract_default_metadata)
+            return await self._handle_non_ole_file(file_path, extract_default_metadata)
 
         text_content = []
         processed_images: Set[str] = set()
@@ -102,18 +101,18 @@ class HwpProcessor:
                 bin_data_map = self._parse_docinfo(ole)
 
                 # 3. BodyText에서 텍스트 추출
-                section_texts = self._extract_body_text(ole, bin_data_map, app_db, processed_images)
+                section_texts = self._extract_body_text(ole, bin_data_map, processed_images)
                 text_content.extend(section_texts)
 
                 # 4. BinData에서 이미지 추출
                 if OCR_AVAILABLE:
-                    image_text = await process_images_from_bindata(ole, app_db=app_db, processed_images=processed_images)
+                    image_text = await process_images_from_bindata(ole, processed_images=processed_images)
                     if image_text:
                         text_content.append("\n\n=== Extracted Images (Not Inline) ===\n")
                         text_content.append(image_text)
 
                 # 5. BinData에서 차트 추출
-                chart_texts = self._extract_charts_from_bindata(ole, app_db, processed_images)
+                chart_texts = self._extract_charts_from_bindata(ole, processed_images)
                 if chart_texts:
                     text_content.extend(chart_texts)
 
@@ -129,12 +128,12 @@ class HwpProcessor:
     # File Type Detection
     # ==========================================================================
 
-    async def _handle_non_ole_file(self, file_path: str, app_db, extract_default_metadata: bool) -> str:
+    async def _handle_non_ole_file(self, file_path: str, extract_default_metadata: bool) -> str:
         """비-OLE 파일 처리 (HWPX 또는 손상된 파일)"""
         # HWPX(ZIP) 형식인지 확인 (.hwp 확장자이지만 실제로는 HWPX인 경우)
         if zipfile.is_zipfile(file_path):
             logger.info(f"File {file_path} has .hwp extension but is a Zip file. Processing as HWPX.")
-            return await extract_text_from_hwpx(file_path, self.config, app_db, extract_default_metadata)
+            return await extract_text_from_hwpx(file_path, self.config, extract_default_metadata)
 
         # HWP 3.0 확인
         try:
@@ -147,7 +146,7 @@ class HwpProcessor:
 
         logger.error(f"Not a valid OLE file: {file_path}")
         # Fallback: 손상된 파일 복구 시도
-        return await self._process_corrupted_hwp(file_path, app_db=app_db)
+        return await self._process_corrupted_hwp(file_path)
 
     # ==========================================================================
     # Metadata Extraction
@@ -179,7 +178,6 @@ class HwpProcessor:
         self,
         ole: olefile.OleFileIO,
         bin_data_map: Dict,
-        app_db,
         processed_images: Set[str]
     ) -> List[str]:
         """BodyText에서 텍스트 추출"""
@@ -202,7 +200,7 @@ class HwpProcessor:
                 logger.warning(f"Failed to decompress section {section}")
                 continue
 
-            section_text = self._parse_section(decompressed_data, ole, bin_data_map, app_db, processed_images)
+            section_text = self._parse_section(decompressed_data, ole, bin_data_map, processed_images)
 
             # 표준 파싱 실패 시 raw 스캔 시도
             if not section_text or not section_text.strip():
@@ -222,14 +220,13 @@ class HwpProcessor:
         data: bytes,
         ole: olefile.OleFileIO = None,
         bin_data_map: Dict = None,
-        app_db=None,
         processed_images: Set[str] = None
     ) -> str:
         """HWP 5.0 Section 바이너리 데이터를 트리 구조로 파싱합니다."""
         try:
             root = HwpRecord.build_tree(data)
             self._log_section_tags(root)
-            return self._traverse_tree(root, ole, bin_data_map, app_db, processed_images)
+            return self._traverse_tree(root, ole, bin_data_map, processed_images)
         except Exception as e:
             logger.error(f"Error parsing HWP section: {e}")
             logger.debug(traceback.format_exc())
@@ -259,7 +256,6 @@ class HwpProcessor:
         record: HwpRecord,
         ole: olefile.OleFileIO = None,
         bin_data_map: Dict = None,
-        app_db=None,
         processed_images: Set[str] = None
     ) -> str:
         """HWP 레코드 트리를 순회하며 컨텐츠를 추출합니다."""
@@ -267,17 +263,17 @@ class HwpProcessor:
 
         # Paragraph Header 처리 (컨테이너)
         if record.tag_id == HWPTAG_PARA_HEADER:
-            return self._process_paragraph(record, ole, bin_data_map, app_db, processed_images)
+            return self._process_paragraph(record, ole, bin_data_map, processed_images)
 
         # Control Header (테이블, GSO 등)
         if record.tag_id == HWPTAG_CTRL_HEADER:
-            result = self._process_control(record, ole, bin_data_map, app_db, processed_images)
+            result = self._process_control(record, ole, bin_data_map, processed_images)
             if result:
                 return result
 
         # Picture (Inline Image)
         if record.tag_id == HWPTAG_SHAPE_COMPONENT_PICTURE:
-            result = self._process_picture(record, ole, bin_data_map, app_db, processed_images)
+            result = self._process_picture(record, ole, bin_data_map, processed_images)
             if result:
                 return result
 
@@ -290,7 +286,7 @@ class HwpProcessor:
 
         # 재귀
         for child in record.children:
-            child_text = self._traverse_tree(child, ole, bin_data_map, app_db, processed_images)
+            child_text = self._traverse_tree(child, ole, bin_data_map, processed_images)
             if child_text:
                 parts.append(child_text)
 
@@ -304,7 +300,6 @@ class HwpProcessor:
         record: HwpRecord,
         ole: olefile.OleFileIO,
         bin_data_map: Dict,
-        app_db,
         processed_images: Set[str]
     ) -> str:
         """PARA_HEADER 레코드를 처리합니다."""
@@ -326,17 +321,17 @@ class HwpProcessor:
             for i, segment in enumerate(segments):
                 parts.append(segment)
                 if i < len(controls):
-                    control_text = self._traverse_tree(controls[i], ole, bin_data_map, app_db, processed_images)
+                    control_text = self._traverse_tree(controls[i], ole, bin_data_map, processed_images)
                     parts.append(control_text)
 
             # 남은 컨트롤 처리
             for k in range(len(segments) - 1, len(controls)):
-                control_text = self._traverse_tree(controls[k], ole, bin_data_map, app_db, processed_images)
+                control_text = self._traverse_tree(controls[k], ole, bin_data_map, processed_images)
                 parts.append(control_text)
         else:
             parts.append(text_content)
             for c in controls:
-                parts.append(self._traverse_tree(c, ole, bin_data_map, app_db, processed_images))
+                parts.append(self._traverse_tree(c, ole, bin_data_map, processed_images))
 
         parts.append("\n")
         return "".join(parts)
@@ -346,7 +341,6 @@ class HwpProcessor:
         record: HwpRecord,
         ole: olefile.OleFileIO,
         bin_data_map: Dict,
-        app_db,
         processed_images: Set[str]
     ) -> Optional[str]:
         """CTRL_HEADER 레코드를 처리합니다."""
@@ -363,13 +357,12 @@ class HwpProcessor:
                 self._traverse_tree,
                 ole,
                 bin_data_map,
-                app_db,
                 processed_images
             )
 
         # GSO (Graphic Shape Object) 처리
         if ctrl_id == b'gso ':
-            return self._process_gso(record, ole, bin_data_map, app_db, processed_images)
+            return self._process_gso(record, ole, bin_data_map, processed_images)
 
         return None
 
@@ -378,7 +371,6 @@ class HwpProcessor:
         record: HwpRecord,
         ole: olefile.OleFileIO,
         bin_data_map: Dict,
-        app_db,
         processed_images: Set[str]
     ) -> Optional[str]:
         """GSO (Graphic Shape Object) 처리"""
@@ -398,7 +390,7 @@ class HwpProcessor:
         if pictures:
             image_parts = []
             for pic_rec in pictures:
-                img_result = self._process_picture(pic_rec, ole, bin_data_map, app_db, processed_images)
+                img_result = self._process_picture(pic_rec, ole, bin_data_map, processed_images)
                 if img_result:
                     image_parts.append(img_result)
             if image_parts:
@@ -411,7 +403,6 @@ class HwpProcessor:
         record: HwpRecord,
         ole: olefile.OleFileIO,
         bin_data_map: Dict,
-        app_db,
         processed_images: Set[str]
     ) -> Optional[str]:
         """SHAPE_COMPONENT_PICTURE 레코드를 처리합니다."""
@@ -423,7 +414,7 @@ class HwpProcessor:
 
         bin_data_list = bin_data_map.get('by_index', [])
         if not bin_data_list:
-            return self._try_fallback_image(ole, bin_data_map, app_db, processed_images)
+            return self._try_fallback_image(ole, bin_data_map, processed_images)
 
         # BinData 인덱스 추출
         bindata_index = extract_bindata_index(record.payload, len(bin_data_list))
@@ -435,7 +426,7 @@ class HwpProcessor:
             if storage_id > 0:
                 target_stream = find_bindata_stream(ole, storage_id, ext)
                 if target_stream:
-                    return extract_and_upload_image(ole, target_stream, app_db, processed_images)
+                    return extract_and_upload_image(ole, target_stream, processed_images)
                 else:
                     logger.warning(f"Could not find stream for storage_id={storage_id}, ext={ext}")
         else:
@@ -448,7 +439,7 @@ class HwpProcessor:
                 if storage_id > 0:
                     target_stream = find_bindata_stream(ole, storage_id, ext)
                     if target_stream:
-                        return extract_and_upload_image(ole, target_stream, app_db, processed_images)
+                        return extract_and_upload_image(ole, target_stream, processed_images)
 
         return None
 
@@ -456,7 +447,6 @@ class HwpProcessor:
         self,
         ole: olefile.OleFileIO,
         bin_data_map: Dict,
-        app_db,
         processed_images: Set[str]
     ) -> Optional[str]:
         """bin_data_list가 비어있을 때 대체 방법으로 이미지 추출"""
@@ -467,7 +457,7 @@ class HwpProcessor:
             storage_id, ext = bin_data_by_storage_id[first_storage_id]
             target_stream = find_bindata_stream(ole, storage_id, ext)
             if target_stream:
-                return extract_and_upload_image(ole, target_stream, app_db, processed_images)
+                return extract_and_upload_image(ole, target_stream, processed_images)
         return None
 
     # ==========================================================================
@@ -477,7 +467,6 @@ class HwpProcessor:
     def _extract_charts_from_bindata(
         self,
         ole: olefile.OleFileIO,
-        app_db=None,
         processed_images: Set[str] = None
     ) -> List[str]:
         """BinData 스토리지에서 차트가 포함된 OLE 객체를 스캔합니다."""
@@ -498,7 +487,7 @@ class HwpProcessor:
                 if ext in image_extensions:
                     continue
 
-                chart_text = self._process_chart_stream(ole, stream_path, app_db, processed_images)
+                chart_text = self._process_chart_stream(ole, stream_path, processed_images)
                 if chart_text:
                     chart_results.append(chart_text)
                     logger.info(f"Extracted chart from {stream_name}")
@@ -512,7 +501,6 @@ class HwpProcessor:
         self,
         ole: olefile.OleFileIO,
         stream_path: List[str],
-        app_db,
         processed_images: Set[str]
     ) -> Optional[str]:
         """차트 스트림을 처리합니다."""
@@ -525,7 +513,7 @@ class HwpProcessor:
 
             chart_data = ChartHelper.extract_chart_from_ole_stream(ole_data)
             if chart_data:
-                return ChartHelper.process_chart(chart_data, app_db, processed_images)
+                return ChartHelper.process_chart(chart_data, processed_images)
 
         except Exception as e:
             logger.debug(f"Failed to extract chart from {stream_path[-1]}: {e}")
@@ -548,7 +536,7 @@ class HwpProcessor:
     # Corrupted File Recovery
     # ==========================================================================
 
-    async def _process_corrupted_hwp(self, file_path: str, app_db=None) -> str:
+    async def _process_corrupted_hwp(self, file_path: str) -> str:
         """손상되었거나 비-OLE HWP 파일에서 텍스트와 이미지 복구를 시도합니다."""
         logger.info(f"Starting forensic recovery for: {file_path}")
         text_content = []
@@ -576,7 +564,7 @@ class HwpProcessor:
 
             # 이미지 복구
             if OCR_AVAILABLE:
-                image_text = await self._recover_images_from_raw(raw_data, app_db)
+                image_text = await self._recover_images_from_raw(raw_data)
                 if image_text:
                     text_content.append(image_text)
 
@@ -617,11 +605,11 @@ class HwpProcessor:
 
         return decompressed_chunks
 
-    async def _recover_images_from_raw(self, raw_data: bytes, app_db) -> Optional[str]:
+    async def _recover_images_from_raw(self, raw_data: bytes) -> Optional[str]:
         """raw 데이터에서 이미지 복구"""
         logger.info("Starting forensic image recovery...")
         try:
-            image_text = await recover_images_from_raw(raw_data, app_db=app_db)
+            image_text = await recover_images_from_raw(raw_data)
             if image_text:
                 return f"\n\n=== Forensically Recovered Images ===\n{image_text}"
             logger.info("Forensic image recovery complete.")
@@ -638,9 +626,8 @@ class HwpProcessor:
 async def extract_text_from_hwp(
     file_path: str,
     config: Dict[str, Any] = None,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """HWP 파일에서 텍스트를 추출하는 편의 함수"""
     processor = HwpProcessor(config)
-    return await processor.process(file_path, app_db=app_db, extract_default_metadata=extract_default_metadata)
+    return await processor.process(file_path, extract_default_metadata=extract_default_metadata)

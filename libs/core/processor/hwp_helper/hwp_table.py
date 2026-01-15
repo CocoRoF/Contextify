@@ -24,10 +24,9 @@ logger = logging.getLogger("document-processor")
 
 def parse_table(
     ctrl_header: HwpRecord,
-    traverse_callback: Callable[[HwpRecord, Any, Dict, Any, Set], str],
+    traverse_callback: Callable[[HwpRecord, Any, Dict, Set], str],
     ole: olefile.OleFileIO = None,
     bin_data_map: Dict = None,
-    app_db: Any = None,
     processed_images: Optional[Set[str]] = None
 ) -> str:
     """
@@ -43,7 +42,6 @@ def parse_table(
         traverse_callback: 셀 내용을 추출하기 위한 트리 순회 콜백 함수
         ole: OLE 파일 객체
         bin_data_map: BinData 매핑 정보
-        app_db: 데이터베이스 연결
         processed_images: 처리된 이미지 경로 집합
 
     Returns:
@@ -66,7 +64,6 @@ def parse_table(
             traverse_callback,
             ole,
             bin_data_map,
-            app_db,
             processed_images
         )
 
@@ -98,10 +95,9 @@ def parse_table(
 
 def build_table_grid(
     ctrl_header: HwpRecord,
-    traverse_callback: Callable[[HwpRecord, Any, Dict, Any, Set], str],
+    traverse_callback: Callable[[HwpRecord, Any, Dict, Set], str],
     ole: olefile.OleFileIO = None,
     bin_data_map: Dict = None,
-    app_db: Any = None,
     processed_images: Optional[Set[str]] = None
 ) -> Dict:
     """
@@ -112,7 +108,6 @@ def build_table_grid(
         traverse_callback: 셀 내용을 추출하기 위한 트리 순회 콜백 함수
         ole: OLE 파일 객체
         bin_data_map: BinData 매핑 정보
-        app_db: 데이터베이스 연결
         processed_images: 처리된 이미지 경로 집합
 
     Returns:
@@ -136,12 +131,12 @@ def build_table_grid(
 
         if cell.children:
             for child in cell.children:
-                t = traverse_callback(child, ole, bin_data_map, app_db, processed_images)
+                t = traverse_callback(child, ole, bin_data_map, processed_images)
                 cell_text_parts.append(t)
         else:
             siblings = list(cell.get_next_siblings(para_count))
             for sibling in siblings:
-                t = traverse_callback(sibling, ole, bin_data_map, app_db, processed_images)
+                t = traverse_callback(sibling, ole, bin_data_map, processed_images)
                 cell_text_parts.append(t)
 
         cell_content = "".join(cell_text_parts).strip()

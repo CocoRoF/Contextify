@@ -21,7 +21,6 @@ logger = logging.getLogger("document-processor")
 def process_paragraph_element(
     para_elem,
     doc: Document,
-    app_db,
     processed_images: Set[str],
     file_path: str = None
 ) -> Tuple[str, bool, int, int]:
@@ -33,7 +32,6 @@ def process_paragraph_element(
     Args:
         para_elem: paragraph XML 요소
         doc: python-docx Document 객체
-        app_db: 데이터베이스 연결
         processed_images: 처리된 이미지 경로 집합 (중복 방지)
         file_path: 원본 파일 경로
 
@@ -59,7 +57,7 @@ def process_paragraph_element(
             # Drawing (이미지/차트/다이어그램) 처리
             for drawing_elem in run_elem.findall('w:drawing', NAMESPACES):
                 drawing_content, drawing_type = process_drawing_element(
-                    drawing_elem, doc, app_db, processed_images, file_path
+                    drawing_elem, doc, processed_images, file_path
                 )
                 if drawing_content:
                     content_parts.append(drawing_content)
@@ -70,7 +68,7 @@ def process_paragraph_element(
 
             # pict 요소 (레거시 VML 이미지) 처리
             for pict_elem in run_elem.findall('w:pict', NAMESPACES):
-                pict_content = process_pict_element(pict_elem, doc, app_db, processed_images)
+                pict_content = process_pict_element(pict_elem, doc, processed_images)
                 if pict_content:
                     content_parts.append(pict_content)
                     image_count += 1

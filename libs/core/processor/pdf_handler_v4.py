@@ -9,7 +9,7 @@ V3 기능 전체 유지 +
 1. 복잡도 분석 - 페이지/영역별 복잡도 점수 계산
 2. 적응형 처리 전략 - 복잡도에 따른 최적 전략 선택
 3. 블록 이미지화 - 복잡한 영역을 이미지로 렌더링
-4. MinIO 업로드 - 이미지화된 블록을 MinIO에 업로드하고 [image:{path}] 태그 생성
+4. 로컬 저장 - 이미지화된 블록을 로컬에 저장하고 [image:{path}] 태그 생성
 5. 다단 레이아웃 - 신문/잡지 스타일 다단 컬럼 처리
 6. 텍스트 품질 분석 - 벡터 텍스트 품질 자동 평가
 
@@ -75,7 +75,7 @@ V4 아키텍처 (V3 확장):
 ┌─────────────────────────────────────────────────────────────────────────┐
 │             ★ Phase 4.5: Block Image Upload (V4 신규)                    │
 │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐                │
-│  │ Complex Region│  │ High-DPI      │  │ MinIO         │                │
+│  │ Complex Region│  │ High-DPI      │  │ Local         │                │
 │  │ Detection     │  │ Rendering     │  │ Upload        │                │
 │  └───────────────┘  └───────────────┘  └───────────────┘                │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -123,13 +123,22 @@ from dataclasses import dataclass
 from collections import defaultdict
 
 from libs.core.processor.pdf_helpers.pdf_helper import (
-    upload_image_to_minio,
     extract_pdf_metadata,
     format_metadata,
     escape_html,
     is_inside_any_bbox,
     find_image_position,
     get_text_lines_with_positions,
+)
+
+# 이미지 처리 모듈
+from libs.core.functions.img_processor import ImageProcessor
+
+# 모듈 레벨 이미지 프로세서
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[Image:",
+    tag_suffix="]"
 )
 
 # V3.1 모듈화된 컴포넌트 import
@@ -375,7 +384,6 @@ class TableInfo:
 async def extract_text_from_pdf_v4(
     file_path: str,
     current_config: Dict[str, Any] = None,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -390,7 +398,6 @@ async def extract_text_from_pdf_v4(
     Args:
         file_path: PDF 파일 경로
         current_config: 설정 딕셔너리
-        app_db: 데이터베이스 연결 (이미지 메타데이터 저장용)
         extract_default_metadata: 메타데이터 추출 여부 (기본값: True)
 
     Returns:
@@ -400,14 +407,13 @@ async def extract_text_from_pdf_v4(
         current_config = {}
 
     logger.info(f"[PDF-V4] Processing: {file_path}")
-    return await _extract_pdf_enhanced_v4(file_path, current_config, app_db, extract_default_metadata)
+    return await _extract_pdf_enhanced_v4(file_path, current_config, extract_default_metadata)
 
 
 # V3 호환 함수 (기존 코드 호환성 유지)
 async def extract_text_from_pdf_v3(
     file_path: str,
     current_config: Dict[str, Any] = None,
-    app_db=None,
     process_type: str = "enhanced",
     extract_default_metadata: bool = True
 ) -> str:
@@ -418,7 +424,6 @@ async def extract_text_from_pdf_v3(
     Args:
         file_path: PDF 파일 경로
         current_config: 설정 딕셔너리
-        app_db: 데이터베이스 연결 (이미지 메타데이터 저장용)
         process_type: 처리 유형
         extract_default_metadata: 메타데이터 추출 여부 (기본값: True)
 
@@ -429,7 +434,7 @@ async def extract_text_from_pdf_v3(
         current_config = {}
 
     logger.info(f"[PDF-V3] Processing: {file_path}")
-    return await _extract_pdf_enhanced_v3(file_path, current_config, app_db, extract_default_metadata)
+    return await _extract_pdf_enhanced_v3(file_path, current_config, extract_default_metadata)
 
 
 # ============================================================================
@@ -439,7 +444,6 @@ async def extract_text_from_pdf_v3(
 async def _extract_pdf_enhanced_v4(
     file_path: str,
     current_config: Dict[str, Any],
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -497,24 +501,24 @@ async def _extract_pdf_enhanced_v4(
             if strategy == ProcessingStrategy.FULL_PAGE_OCR:
                 # 전체 페이지 OCR
                 page_text = await _process_page_full_ocr_v4(
-                    page, page_num, doc, app_db, processed_images, all_tables
+                    page, page_num, doc, processed_images, all_tables
                 )
             elif strategy == ProcessingStrategy.BLOCK_IMAGE_OCR:
                 # 복잡 영역 블록 이미지화 + OCR
                 page_text = await _process_page_block_ocr_v4(
-                    page, page_num, doc, app_db, processed_images, all_tables,
+                    page, page_num, doc, processed_images, all_tables,
                     page_complexity.complex_regions
                 )
             elif strategy == ProcessingStrategy.HYBRID:
                 # 하이브리드 (텍스트 + 부분 OCR)
                 page_text = await _process_page_hybrid_v4(
-                    page, page_num, doc, app_db, processed_images, all_tables,
+                    page, page_num, doc, processed_images, all_tables,
                     page_complexity
                 )
             else:
                 # TEXT_EXTRACTION: 기존 V3 로직
                 page_text = await _process_page_text_extraction_v4(
-                    page, page_num, doc, app_db, processed_images, all_tables
+                    page, page_num, doc, processed_images, all_tables
                 )
 
             if page_text.strip():
@@ -534,7 +538,7 @@ async def _extract_pdf_enhanced_v4(
 
 
 async def _process_page_text_extraction_v4(
-    page, page_num: int, doc, app_db, processed_images: Set[int],
+    page, page_num: int, doc, processed_images: Set[int],
     all_tables: Dict[int, List[PageElement]]
 ) -> str:
     """
@@ -573,7 +577,7 @@ async def _process_page_text_extraction_v4(
 
     # 5. 이미지 추출
     image_elements = await _extract_images_from_page_v3(
-        page, page_num, doc, app_db, processed_images, table_bboxes
+        page, page_num, doc, processed_images, table_bboxes
     )
     page_elements.extend(image_elements)
 
@@ -582,14 +586,14 @@ async def _process_page_text_extraction_v4(
 
 
 async def _process_page_hybrid_v4(
-    page, page_num: int, doc, app_db, processed_images: Set[int],
+    page, page_num: int, doc, processed_images: Set[int],
     all_tables: Dict[int, List[PageElement]],
     page_complexity: PageComplexity
 ) -> str:
     """
     HYBRID 전략 - 텍스트 추출 + 복잡 영역 이미지화.
     중간 복잡도의 페이지에 적합합니다.
-    복잡한 영역은 [image:{minio_path}] 형태로 변환됩니다.
+    복잡한 영역은 [image:{path}] 형태로 변환됩니다.
     """
     page_elements: List[PageElement] = []
 
@@ -632,9 +636,9 @@ async def _process_page_hybrid_v4(
         if not is_in_complex:
             page_elements.append(elem)
 
-    # 5. 복잡 영역: 블록 이미지화 → MinIO 업로드 → [image:path] 태그
+    # 5. 복잡 영역: 블록 이미지화 → 로컬 저장 → [image:path] 태그
     if complex_bboxes:
-        block_engine = BlockImageEngine(page, page_num, app_db)
+        block_engine = BlockImageEngine(page, page_num)
 
         for complex_bbox in complex_bboxes:
             result = await block_engine.process_region(complex_bbox, region_type="complex_region")
@@ -649,7 +653,7 @@ async def _process_page_hybrid_v4(
 
     # 6. 이미지 추출
     image_elements = await _extract_images_from_page_v3(
-        page, page_num, doc, app_db, processed_images, table_bboxes
+        page, page_num, doc, processed_images, table_bboxes
     )
     page_elements.extend(image_elements)
 
@@ -658,14 +662,14 @@ async def _process_page_hybrid_v4(
 
 
 async def _process_page_block_ocr_v4(
-    page, page_num: int, doc, app_db, processed_images: Set[int],
+    page, page_num: int, doc, processed_images: Set[int],
     all_tables: Dict[int, List[PageElement]],
     complex_regions: List[Tuple[float, float, float, float]]
 ) -> str:
     """
-    BLOCK_IMAGE_OCR 전략 - 복잡 영역을 이미지로 렌더링하고 MinIO에 업로드.
+    BLOCK_IMAGE_OCR 전략 - 복잡 영역을 이미지로 렌더링하고 로컬에 저장.
     복잡한 페이지에 적합합니다.
-    복잡한 영역은 [image:{minio_path}] 형태로 변환됩니다.
+    복잡한 영역은 [image:{path}] 형태로 변환됩니다.
     """
     page_elements: List[PageElement] = []
 
@@ -676,9 +680,9 @@ async def _process_page_block_ocr_v4(
 
     table_bboxes = [elem.bbox for elem in page_tables]
 
-    # 2. 복잡 영역: 블록 이미지화 → MinIO 업로드 → [image:path] 태그
+    # 2. 복잡 영역: 블록 이미지화 → 로컬 저장 → [image:path] 태그
     if complex_regions:
-        block_engine = BlockImageEngine(page, page_num, app_db)
+        block_engine = BlockImageEngine(page, page_num)
 
         for complex_bbox in complex_regions:
             # 테이블 영역과 겹치면 스킵
@@ -708,7 +712,7 @@ async def _process_page_block_ocr_v4(
 
     # 4. 이미지 추출
     image_elements = await _extract_images_from_page_v3(
-        page, page_num, doc, app_db, processed_images, table_bboxes
+        page, page_num, doc, processed_images, table_bboxes
     )
     page_elements.extend(image_elements)
 
@@ -716,7 +720,7 @@ async def _process_page_block_ocr_v4(
 
 
 async def _process_page_full_ocr_v4(
-    page, page_num: int, doc, app_db, processed_images: Set[int],
+    page, page_num: int, doc, processed_images: Set[int],
     all_tables: Dict[int, List[PageElement]]
 ) -> str:
     """
@@ -782,7 +786,7 @@ async def _process_page_full_ocr_v4(
 
         # 테이블 영역 외의 이미지 추출
         image_elements = await _extract_images_from_page_v3(
-            page, page_num, doc, app_db, processed_images, table_bboxes
+            page, page_num, doc, processed_images, table_bboxes
         )
         page_elements.extend(image_elements)
 
@@ -793,7 +797,7 @@ async def _process_page_full_ocr_v4(
         return _merge_page_elements_v3(page_elements)
 
     # ★ Phase 3: 테이블 처리가 불가능하면 스마트 블록 처리
-    block_engine = BlockImageEngine(page, page_num, app_db)
+    block_engine = BlockImageEngine(page, page_num)
     multi_result: MultiBlockResult = await block_engine.process_page_smart()
 
     if multi_result.success and multi_result.block_results:
@@ -824,7 +828,7 @@ async def _process_page_full_ocr_v4(
                 bbox=(0, 0, page.rect.width, page.rect.height),
                 page_num=page_num
             ))
-            logger.info(f"[PDF-V4] Page {page_num + 1}: Full page image uploaded: {result.minio_path}")
+            logger.info(f"[PDF-V4] Page {page_num + 1}: Full page image saved: {result.image_path}")
         else:
             # 최후의 폴백: 텍스트 추출
             logger.warning(f"[PDF-V4] Page {page_num + 1}: Full page image failed, "
@@ -840,7 +844,7 @@ async def _process_page_full_ocr_v4(
             page_elements.extend(text_elements)
 
             image_elements = await _extract_images_from_page_v3(
-                page, page_num, doc, app_db, processed_images, table_bboxes
+                page, page_num, doc, processed_images, table_bboxes
             )
             page_elements.extend(image_elements)
 
@@ -864,7 +868,6 @@ def _bbox_overlaps(bbox1: Tuple, bbox2: Tuple) -> bool:
 async def _extract_pdf_enhanced_v3(
     file_path: str,
     current_config: Dict[str, Any],
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -938,7 +941,7 @@ async def _extract_pdf_enhanced_v3(
 
             # 5. 이미지 추출
             image_elements = await _extract_images_from_page_v3(
-                page, page_num, doc, app_db, processed_images, table_bboxes
+                page, page_num, doc, processed_images, table_bboxes
             )
             page_elements.extend(image_elements)
 
@@ -1925,13 +1928,12 @@ async def _extract_images_from_page_v3(
     page,
     page_num: int,
     doc,
-    app_db,
     processed_images: Set[int],
     table_bboxes: List[Tuple[float, float, float, float]],
     min_image_size: int = 50,
     min_image_area: int = 2500
 ) -> List[PageElement]:
-    """페이지에서 이미지 추출 및 MinIO 업로드 (V3)"""
+    """페이지에서 이미지 추출 및 로컬 저장 (V3)"""
     elements = []
 
     try:
@@ -1964,16 +1966,14 @@ async def _extract_images_from_page_v3(
                 if is_inside_any_bbox(img_bbox, table_bboxes, threshold=0.7):
                     continue
 
-                image_url = upload_image_to_minio(image_bytes, app_db)
+                image_tag = _image_processor.save_image(image_bytes)
 
-                if image_url:
+                if image_tag:
                     processed_images.add(xref)
-
-                    image_tag = f'\n[Image:{image_url}]\n'
 
                     elements.append(PageElement(
                         element_type=ElementType.IMAGE,
-                        content=image_tag,
+                        content=f'\n{image_tag}\n',
                         bbox=img_bbox,
                         page_num=page_num
                     ))

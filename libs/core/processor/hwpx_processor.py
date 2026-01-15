@@ -39,14 +39,13 @@ class HwpxProcessor:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
 
-    async def process_hwpx(self, file_path: str, app_db=None, extract_default_metadata: bool = True) -> str:
+    async def process_hwpx(self, file_path: str, extract_default_metadata: bool = True) -> str:
         """
         Process HWPX (Zip/XML) file.
         Extracts text, tables (as HTML/Markdown), and images inline.
 
         Args:
             file_path: HWPX 파일 경로
-            app_db: 데이터베이스 연결
             extract_default_metadata: 기본 메타데이터 추출 여부 (기본값: True)
         """
         text_content = []
@@ -78,7 +77,7 @@ class HwpxProcessor:
                     with zf.open(sec_file) as f:
                         xml_content = f.read()
                         # Pass zf and map to parse section for inline images
-                        section_text = parse_hwpx_section(xml_content, zf, bin_item_map, app_db, processed_images)
+                        section_text = parse_hwpx_section(xml_content, zf, bin_item_map, processed_images)
                         text_content.append(section_text)
 
                 # 2. Process Remaining Images (BinData) that were not inline (using helper)
@@ -86,13 +85,13 @@ class HwpxProcessor:
                     remaining_images = get_remaining_images(zf, processed_images)
 
                     if remaining_images:
-                        image_text = await process_hwpx_images(zf, remaining_images, app_db=app_db)
+                        image_text = await process_hwpx_images(zf, remaining_images)
                         if image_text:
                             text_content.append("\n\n=== Extracted Images (Not Inline) ===\n")
                             text_content.append(image_text)
 
                 # 3. Extract Charts (using helper)
-                chart_texts = extract_charts_from_hwpx(zf, app_db=app_db)
+                chart_texts = extract_charts_from_hwpx(zf)
                 if chart_texts:
                     text_content.extend(chart_texts)
 
@@ -105,7 +104,7 @@ class HwpxProcessor:
         return final_result
 
 
-async def extract_text_from_hwpx(file_path: str, config: Dict[str, Any], app_db=None, extract_default_metadata: bool = True) -> str:
+async def extract_text_from_hwpx(file_path: str, config: Dict[str, Any], extract_default_metadata: bool = True) -> str:
     """HWPX 파일에서 텍스트 추출 (외부 호출용 함수)"""
     processor = HwpxProcessor(config)
-    return await processor.process_hwpx(file_path, app_db=app_db, extract_default_metadata=extract_default_metadata)
+    return await processor.process_hwpx(file_path, extract_default_metadata=extract_default_metadata)

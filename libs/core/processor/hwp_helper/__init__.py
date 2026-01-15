@@ -54,7 +54,7 @@ from .hwp_metadata import (
 # Image
 from .hwp_image import (
     try_decompress_image,
-    upload_image_to_minio,
+    save_image_to_local,
     find_bindata_stream,
     extract_bindata_index,
     extract_and_upload_image,
@@ -115,7 +115,7 @@ __all__ = [
     'MetadataHelper',
     # Image
     'try_decompress_image',
-    'upload_image_to_minio',
+    'save_image_to_local',
     'find_bindata_stream',
     'extract_bindata_index',
     'extract_and_upload_image',

@@ -25,12 +25,17 @@ try:
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
 
-# MinIO 업로드
+# 로컬 이미지 저장
 try:
-    from libs.core.functions.utils import upload_image_to_minio
-    MINIO_AVAILABLE = True
+    from libs.core.functions.img_processor import ImageProcessor
+    _image_processor = ImageProcessor(
+        directory_path="temp/images",
+        tag_prefix="[image:",
+        tag_suffix="]"
+    )
+    IMAGE_PROCESSOR_AVAILABLE = True
 except ImportError:
-    MINIO_AVAILABLE = False
+    IMAGE_PROCESSOR_AVAILABLE = False
 
 logger = logging.getLogger("document-processor")
 
@@ -630,15 +635,14 @@ class ChartHelper:
         return ChartHelper.format_chart_data_as_table(chart_data)
 
     @staticmethod
-    def render_chart_to_image(chart_data: Dict[str, Any], app_db=None, processed_images: Set[str] = None) -> Optional[str]:
+    def render_chart_to_image(chart_data: Dict[str, Any], processed_images: Set[str] = None) -> Optional[str]:
         """
-        차트 데이터를 matplotlib로 이미지로 렌더링하고 MinIO에 업로드합니다.
+        차트 데이터를 matplotlib로 이미지로 렌더링하고 로컬에 저장합니다.
 
         테이블 변환 실패 시 폴백으로 사용됩니다.
 
         Args:
             chart_data: 차트 정보 딕셔너리
-            app_db: 데이터베이스 연결
             processed_images: 이미 처리된 이미지 해시 집합
 
         Returns:
@@ -648,8 +652,8 @@ class ChartHelper:
             logger.warning("matplotlib not available for chart rendering")
             return None
 
-        if not MINIO_AVAILABLE:
-            logger.warning("MinIO upload not available for chart rendering")
+        if not IMAGE_PROCESSOR_AVAILABLE:
+            logger.warning("ImageProcessor not available for chart rendering")
             return None
 
         if not chart_data:
@@ -725,19 +729,19 @@ class ChartHelper:
             img_data = img_buffer.getvalue()
             plt.close(fig)
 
-            # MinIO에 업로드
+            # 로컬에 저장
             if processed_images is None:
                 processed_images = set()
 
-            minio_path = upload_image_to_minio(img_data, app_db=app_db, processed_images=processed_images)
+            image_tag = _image_processor.save_image(img_data)
 
-            if minio_path:
+            if image_tag:
                 result_parts = ["[chart]"]
                 if title:
                     result_parts.append(f"제목: {title}")
                 if chart_type:
                     result_parts.append(f"유형: {chart_type}")
-                result_parts.append(f"[image:{minio_path}]")
+                result_parts.append(image_tag)
                 result_parts.append("[/chart]")
                 return "\n".join(result_parts)
 
@@ -750,16 +754,15 @@ class ChartHelper:
             return None
 
     @staticmethod
-    def process_chart(chart_data: Dict[str, Any], app_db=None, processed_images: Set[str] = None) -> str:
+    def process_chart(chart_data: Dict[str, Any], processed_images: Set[str] = None) -> str:
         """
         차트를 처리합니다.
 
         1순위: 데이터를 표(테이블)로 변환 - LLM이 직접 해석 가능
-        2순위: 실패 시 matplotlib로 이미지 생성 후 MinIO 업로드
+        2순위: 실패 시 matplotlib로 이미지 생성 후 로컬 저장
 
         Args:
             chart_data: 차트 정보 딕셔너리
-            app_db: 데이터베이스 연결
             processed_images: 이미 처리된 이미지 해시 집합
 
         Returns:
@@ -772,7 +775,7 @@ class ChartHelper:
             return table_result
 
         # 2순위: 이미지로 렌더링
-        image_result = ChartHelper.render_chart_to_image(chart_data, app_db, processed_images)
+        image_result = ChartHelper.render_chart_to_image(chart_data, processed_images)
         if image_result:
             logger.debug("Chart rendered to image successfully")
             return image_result

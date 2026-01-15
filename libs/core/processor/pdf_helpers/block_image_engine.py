@@ -1,13 +1,13 @@
 """
 Block Image Engine for PDF Handler V4 (고도화 버전)
 
-복잡한 영역을 의미론적 블록 단위로 분할하여 이미지로 렌더링하고 MinIO에 업로드합니다.
+복잡한 영역을 의미론적 블록 단위로 분할하여 이미지로 렌더링하고 로컬에 저장합니다.
 
 =============================================================================
 V4 고도화 핵심 개념:
 =============================================================================
 기존: 전체 페이지를 하나의 이미지로 업로드
-개선: 페이지를 **의미론적/논리적 블록 단위**로 분할하여 각각 PNG로 업로드
+개선: 페이지를 **의미론적/논리적 블록 단위**로 분할하여 각각 PNG로 저장
 
 이를 통해:
 1. LLM이 각 블록을 **개별적으로** 해석 가능
@@ -55,12 +55,17 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
-# MinIO 업로드 함수 import
-from libs.core.processor.pdf_helpers.pdf_helper import (
-    upload_image_to_minio,
-)
+# 이미지 처리 모듈
+from libs.core.functions.img_processor import ImageProcessor
 
 logger = logging.getLogger(__name__)
+
+# 모듈 레벨 이미지 프로세서
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[Image:",
+    tag_suffix="]"
+)
 
 
 # ============================================================================
@@ -120,10 +125,10 @@ class BlockImageResult:
     image_size: Tuple[int, int]
     dpi: int
 
-    # MinIO 경로
-    minio_path: Optional[str] = None
+    # 이미지 경로
+    image_path: Optional[str] = None
 
-    # 인라인 태그 ([Image:{minio_path}] 형태)
+    # 인라인 태그 ([Image:{path}] 형태)
     image_tag: Optional[str] = None
 
     # 성공 여부
@@ -165,22 +170,20 @@ class BlockImageEngine:
     """
     블록 이미지 엔진
 
-    복잡한 영역을 이미지로 렌더링하고 MinIO에 업로드합니다.
-    결과는 [image:{minio_path}] 형태로 반환됩니다.
+    복잡한 영역을 이미지로 렌더링하고 로컬에 저장합니다.
+    결과는 [image:{path}] 형태로 반환됩니다.
     """
 
     def __init__(
         self,
         page,
         page_num: int,
-        app_db=None,
         config: Optional[BlockImageConfig] = None
     ):
         """
         Args:
             page: PyMuPDF page 객체
             page_num: 페이지 번호 (0-indexed)
-            app_db: 데이터베이스 연결 (이미지 메타데이터 저장용)
             config: 엔진 설정
         """
         if not PYMUPDF_AVAILABLE:
@@ -188,7 +191,6 @@ class BlockImageEngine:
 
         self.page = page
         self.page_num = page_num
-        self.app_db = app_db
         self.config = config or BlockImageConfig()
 
         self.page_width = page.rect.width
@@ -203,14 +205,14 @@ class BlockImageEngine:
         region_type: str = "complex_region"
     ) -> BlockImageResult:
         """
-        특정 영역을 이미지로 렌더링하고 MinIO에 업로드합니다.
+        특정 영역을 이미지로 렌더링하고 로컬에 저장합니다.
 
         Args:
             bbox: 처리할 영역 (x0, y0, x1, y1)
             region_type: 영역 유형 (로깅용)
 
         Returns:
-            BlockImageResult 객체 (minio_path, image_tag 포함)
+            BlockImageResult 객체 (image_path, image_tag 포함)
         """
         try:
             # 최소 크기 검증
@@ -250,28 +252,28 @@ class BlockImageEngine:
                 )
             self._processed_hashes.add(image_hash)
 
-            # 3. MinIO 업로드 (동기 함수 - 기존 핸들러와 동일)
-            minio_path = upload_image_to_minio(image_bytes, self.app_db)
+            # 3. 로컬에 저장 (ImageProcessor 사용)
+            image_tag = _image_processor.save_image(image_bytes)
 
-            if not minio_path:
+            if not image_tag:
                 return BlockImageResult(
                     bbox=bbox,
                     image_size=image_size,
                     dpi=actual_dpi,
                     success=False,
-                    error="Failed to upload to MinIO"
+                    error="Failed to save image"
                 )
 
-            # 4. 이미지 태그 생성 (대문자 Image - 기존 핸들러와 호환)
-            image_tag = f"[Image:{minio_path}]"
+            # 경로 추출 (태그에서)
+            image_path = image_tag.replace("[Image:", "").replace("]", "")
 
-            logger.debug(f"[BlockImageEngine] Uploaded {region_type} at page {self.page_num + 1}: {minio_path}")
+            logger.debug(f"[BlockImageEngine] Saved {region_type} at page {self.page_num + 1}: {image_path}")
 
             return BlockImageResult(
                 bbox=bbox,
                 image_size=image_size,
                 dpi=actual_dpi,
-                minio_path=minio_path,
+                image_path=image_path,
                 image_tag=image_tag,
                 success=True
             )
@@ -288,7 +290,7 @@ class BlockImageEngine:
 
     async def process_full_page(self, region_type: str = "full_page") -> BlockImageResult:
         """
-        전체 페이지를 이미지로 렌더링하고 MinIO에 업로드합니다.
+        전체 페이지를 이미지로 렌더링하고 로컬에 저장합니다.
 
         Args:
             region_type: 영역 유형 (로깅용)

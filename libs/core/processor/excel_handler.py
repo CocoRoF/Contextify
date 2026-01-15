@@ -6,7 +6,7 @@ Excel Handler - Excel 문서 처리기 (XLSX/XLS)
 - 메타데이터 추출 (제목, 작성자, 주제, 키워드, 작성일, 수정일 등)
 - 텍스트 추출 (openpyxl/xlrd를 통한 직접 파싱)
 - 테이블 추출 (병합셀 유무에 따라 Markdown 또는 HTML 변환)
-- 인라인 이미지 추출 및 MinIO 업로드
+- 인라인 이미지 추출 및 로컬 저장
 - 차트 처리 (1순위: 테이블로 변환, 2순위: matplotlib 이미지)
 - 다중 시트 지원
 
@@ -18,7 +18,14 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any, Dict, List, Set
 
-from libs.core.functions.utils import upload_image_to_minio
+from libs.core.functions.img_processor import ImageProcessor
+
+# 모듈 레벨 이미지 프로세서
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[image:",
+    tag_suffix="]"
+)
 
 if TYPE_CHECKING:
     from openpyxl.workbook import Workbook
@@ -67,7 +74,6 @@ except ImportError:
 async def extract_text_from_excel(
     file_path: str,
     current_config: Dict[str, Any] = None,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -76,7 +82,6 @@ async def extract_text_from_excel(
     Args:
         file_path: Excel 파일 경로
         current_config: 설정 딕셔너리
-        app_db: 데이터베이스 연결 (이미지 메타데이터 저장용)
         extract_default_metadata: 기본 메타데이터 추출 여부 (기본값: True)
 
     Returns:
@@ -88,12 +93,12 @@ async def extract_text_from_excel(
     if ext == '.xlsx':
         if not OPENPYXL_AVAILABLE:
             raise ImportError("openpyxl이 설치되어야 .xlsx 파일을 처리할 수 있습니다.")
-        return await _extract_xlsx(file_path, app_db, extract_default_metadata)
+        return await _extract_xlsx(file_path, extract_default_metadata)
 
     elif ext == '.xls':
         if not XLRD_AVAILABLE:
             raise ImportError("xlrd가 설치되어야 .xls 파일을 처리할 수 있습니다.")
-        return await _extract_xls(file_path, app_db, extract_default_metadata)
+        return await _extract_xls(file_path, extract_default_metadata)
 
     else:
         raise ValueError(f"지원하지 않는 Excel 형식입니다: {ext}")
@@ -103,7 +108,6 @@ async def extract_text_from_excel(
 
 async def _extract_xlsx(
     file_path: str,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """XLSX 파일 처리 메인 함수."""
@@ -125,7 +129,6 @@ async def _extract_xlsx(
                 wb[sheet_name],
                 sheet_name,
                 preload,
-                app_db,
                 processed_images,
                 stats
             )
@@ -135,7 +138,6 @@ async def _extract_xlsx(
         remaining = _process_remaining_charts(
             preload["charts"],
             preload["chart_idx"],
-            app_db,
             processed_images,
             stats
         )
@@ -197,7 +199,6 @@ def _process_xlsx_sheet(
     ws: Worksheet,
     sheet_name: str,
     preload: Dict[str, Any],
-    app_db,
     processed_images: Set[str],
     stats: Dict[str, int]
 ) -> str:
@@ -219,14 +220,14 @@ def _process_xlsx_sheet(
 
     # 2. 차트 처리
     chart_result = _process_sheet_charts(
-        ws, preload, app_db, processed_images, stats
+        ws, preload, processed_images, stats
     )
     if chart_result:
         parts.append(chart_result)
 
     # 3. 이미지 처리
     image_result = _process_sheet_images(
-        ws, preload, app_db, processed_images, stats
+        ws, preload, processed_images, stats
     )
     if image_result:
         parts.append(image_result)
@@ -242,7 +243,6 @@ def _process_xlsx_sheet(
 def _process_sheet_charts(
     ws: Worksheet,
     preload: Dict[str, Any],
-    app_db,
     processed_images: Set[str],
     stats: Dict[str, int]
 ) -> str:
@@ -257,9 +257,8 @@ def _process_sheet_charts(
         if preload["chart_idx"] < len(charts):
             chart_text = process_chart(
                 charts[preload["chart_idx"]],
-                app_db,
                 processed_images,
-                upload_func=upload_image_to_minio
+                upload_func=_image_processor.save_image
             )
             preload["chart_idx"] += 1
         else:
@@ -275,7 +274,6 @@ def _process_sheet_charts(
 def _process_sheet_images(
     ws: Worksheet,
     preload: Dict[str, Any],
-    app_db,
     processed_images: Set[str],
     stats: Dict[str, int]
 ) -> str:
@@ -284,11 +282,9 @@ def _process_sheet_images(
     sheet_images = get_sheet_images(ws, preload["images_data"], "")
 
     for img_data, img_anchor in sheet_images:
-        minio_path = upload_image_to_minio(
-            img_data, app_db=app_db, processed_images=processed_images
-        )
-        if minio_path:
-            parts.append(f"\n[image:{minio_path}]\n")
+        image_tag = _image_processor.save_image(img_data)
+        if image_tag:
+            parts.append(f"\n{image_tag}\n")
             stats["images"] += 1
 
     return "".join(parts)
@@ -315,7 +311,6 @@ def _process_sheet_textboxes(
 def _process_remaining_charts(
     charts: List[Dict],
     chart_idx: int,
-    app_db,
     processed_images: Set[str],
     stats: Dict[str, int]
 ) -> str:
@@ -325,9 +320,8 @@ def _process_remaining_charts(
     while chart_idx < len(charts):
         chart_text = process_chart(
             charts[chart_idx],
-            app_db,
             processed_images,
-            upload_func=upload_image_to_minio
+            upload_func=_image_processor.save_image
         )
         if chart_text:
             parts.append(f"\n{chart_text}\n")
@@ -341,7 +335,6 @@ def _process_remaining_charts(
 
 async def _extract_xls(
     file_path: str,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """XLS 파일 처리 메인 함수."""

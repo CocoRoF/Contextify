@@ -1,4 +1,4 @@
-# your_package/document_processor/pdf_handler.py
+# libs/core/processor/pdf_handler.py
 """
 PDF Handler - PDF 문서 처리기 (Enhanced 전용)
 
@@ -6,7 +6,7 @@ PDF Handler - PDF 문서 처리기 (Enhanced 전용)
 - 메타데이터 추출 (제목, 작성자, 주제, 키워드, 작성일, 수정일 등)
 - 텍스트 추출 (PyMuPDF)
 - 테이블 추출 (pdfplumber 우선, PyMuPDF 폴백)
-- 인라인 이미지 추출 및 MinIO 업로드
+- 인라인 이미지 추출 및 로컬 저장
 
 테이블 추출은 pdfplumber를 우선 사용하고, 실패 시 PyMuPDF로 폴백합니다.
 """
@@ -23,10 +23,17 @@ from enum import Enum
 
 from PIL import Image
 from libs.core.processor.pdf_helpers.pdf_helper import (
-    upload_image_to_minio,
     extract_pdf_metadata,
     format_metadata,
     find_image_position
+)
+from libs.core.functions.img_processor import ImageProcessor
+
+# 모듈 레벨 이미지 프로세서
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[image:",
+    tag_suffix="]"
 )
 
 logger = logging.getLogger("document-processor")
@@ -94,7 +101,6 @@ class TableContinuationInfo:
 async def extract_text_from_pdf(
     file_path: str,
     current_config: Dict[str, Any] = None,
-    app_db=None,
     extract_default_metadata: bool = True
 ) -> str:
     """
@@ -103,7 +109,6 @@ async def extract_text_from_pdf(
     Args:
         file_path: PDF 파일 경로
         current_config: 설정 딕셔너리
-        app_db: 데이터베이스 연결 (이미지 메타데이터 저장용)
         extract_default_metadata: 메타데이터 추출 여부 (기본값: True)
 
     Returns:
@@ -113,7 +118,7 @@ async def extract_text_from_pdf(
         current_config = {}
 
     logger.info(f"PDF processing with images: {file_path}")
-    return await _extract_pdf_enhanced(file_path, current_config, app_db, extract_default_metadata=extract_default_metadata)
+    return await _extract_pdf_enhanced(file_path, current_config, extract_default_metadata=extract_default_metadata)
 
 
 # === 고도화된 PDF 처리 ===
@@ -121,7 +126,6 @@ async def extract_text_from_pdf(
 async def _extract_pdf_enhanced(
     file_path: str,
     current_config: Dict[str, Any],
-    app_db=None,
     extract_images: bool = True,
     extract_tables: bool = True,
     extract_default_metadata: bool = True
@@ -129,7 +133,7 @@ async def _extract_pdf_enhanced(
     """
     고도화된 PDF 처리.
 
-    - 인라인 이미지 추출 및 MinIO 업로드
+    - 인라인 이미지 추출 및 로컬 저장
     - 테이블 HTML 형식 보존 (셀 병합 지원)
     - 요소 위치 기반 텍스트 통합
     """
@@ -178,7 +182,7 @@ async def _extract_pdf_enhanced(
             # 2. 이미지 추출 (옵션)
             if extract_images:
                 image_elements = await _extract_images_from_page(
-                    page, page_num, page_height, doc, app_db, processed_images
+                    page, page_num, page_height, doc, processed_images
                 )
                 elements.extend(image_elements)
 
@@ -272,13 +276,12 @@ async def _extract_images_from_page(
     page_num: int,
     page_height: float,
     doc,
-    app_db,
     processed_images: set,
     min_image_size: int = 50,
     min_image_area: int = 2500
 ) -> List[PageElement]:
     """
-    페이지에서 이미지를 추출하고 MinIO에 업로드합니다.
+    페이지에서 이미지를 추출하고 로컬에 저장합니다.
     """
     elements = []
 
@@ -320,15 +323,15 @@ async def _extract_images_from_page(
                     # 위치를 찾지 못하면 페이지 중앙에 배치
                     bbox = (0, page_height / 2, page.rect.width, page_height / 2 + 1)
 
-                # MinIO에 업로드
-                minio_path = upload_image_to_minio(image_data, app_db)
+                # 로컬에 저장
+                image_tag = _image_processor.save_image(image_data)
 
-                if minio_path:
+                if image_tag:
                     processed_images.add(xref)
 
                     elements.append(PageElement(
                         element_type=ElementType.IMAGE,
-                        content=f"\n[image:{minio_path}]\n",
+                        content=f"\n{image_tag}\n",
                         bbox=bbox,
                         page_num=page_num
                     ))

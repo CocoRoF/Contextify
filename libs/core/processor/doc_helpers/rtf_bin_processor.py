@@ -9,7 +9,7 @@ RTF 파일 내의 바이너리 이미지 데이터를 처리합니다:
 주요 기능:
 1. \binN 태그 스킵 (N 바이트의 바이너리 데이터를 건너뜀)
 2. \pict 그룹에서 이미지 추출
-3. 이미지를 MinIO에 업로드하고 [image:path] 태그로 변환
+3. 이미지를 로컬에 저장하고 [image:path] 태그로 변환
 
 RTF 스펙:
 - \binN: N 바이트의 raw 바이너리 데이터가 뒤따름
@@ -25,7 +25,14 @@ import struct
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from libs.core.functions.utils import upload_image_to_minio
+from libs.core.functions.img_processor import ImageProcessor
+
+# 모듈 레벨 이미지 프로세서
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[image:",
+    tag_suffix="]"
+)
 
 logger = logging.getLogger("document-processor")
 
@@ -79,16 +86,14 @@ class RTFBinaryProcessor:
     RTF 바이너리 데이터 처리기
 
     RTF 파일에서 바이너리 이미지 데이터를 추출하고,
-    MinIO에 업로드하여 이미지 태그로 변환합니다.
+    로컬에 저장하여 이미지 태그로 변환합니다.
     """
 
-    def __init__(self, app_db=None, processed_images: Optional[Set[str]] = None):
+    def __init__(self, processed_images: Optional[Set[str]] = None):
         """
         Args:
-            app_db: 데이터베이스 연결 (이미지 메타데이터 저장용)
             processed_images: 이미 처리된 이미지 해시 집합 (중복 방지)
         """
-        self.app_db = app_db
         self.processed_images = processed_images if processed_images is not None else set()
         self.binary_regions: List[RTFBinaryRegion] = []
         self.image_tags: Dict[int, str] = {}
@@ -98,7 +103,7 @@ class RTFBinaryProcessor:
         RTF 바이너리 콘텐츠를 처리합니다.
 
         bin 태그의 바이너리 데이터를 스킵하고,
-        pict 그룹의 이미지를 추출하여 MinIO에 업로드합니다.
+        pict 그룹의 이미지를 추출하여 로컬에 저장합니다.
 
         Args:
             content: RTF 파일 바이너리 콘텐츠
@@ -120,7 +125,7 @@ class RTFBinaryProcessor:
         all_regions.sort(key=lambda r: r.start_pos)
         self.binary_regions = all_regions
 
-        # 4단계: 이미지 추출 및 MinIO 업로드
+        # 4단계: 이미지 추출 및 로컬 저장
         self._process_images()
 
         # 5단계: 바이너리 데이터를 제거한 콘텐츠 생성
@@ -396,7 +401,7 @@ class RTFBinaryProcessor:
 
     def _process_images(self) -> None:
         """
-        추출된 이미지를 MinIO에 업로드하고 태그를 생성합니다.
+        추출된 이미지를 로컬에 저장하고 태그를 생성합니다.
         """
         for region in self.binary_regions:
             if not region.image_data:
@@ -407,22 +412,18 @@ class RTFBinaryProcessor:
             supported_formats = {'jpeg', 'png', 'gif', 'bmp'}
 
             if region.image_format in supported_formats:
-                minio_path = upload_image_to_minio(
-                    region.image_data,
-                    app_db=self.app_db,
-                    processed_images=self.processed_images
-                )
+                image_tag = _image_processor.save_image(region.image_data)
 
-                if minio_path:
-                    self.image_tags[region.start_pos] = f"\n[image:{minio_path}]\n"
+                if image_tag:
+                    self.image_tags[region.start_pos] = f"\n{image_tag}\n"
                     logger.info(
-                        f"Uploaded RTF image to MinIO: {minio_path} "
+                        f"Saved RTF image locally: {image_tag} "
                         f"(format={region.image_format}, size={region.data_size})"
                     )
                 else:
-                    # 업로드 실패 시 빈 태그 (무시됨)
+                    # 저장 실패 시 빈 태그 (무시됨)
                     self.image_tags[region.start_pos] = ""
-                    logger.warning(f"Image upload failed, removing (pos={region.start_pos})")
+                    logger.warning(f"Image save failed, removing (pos={region.start_pos})")
             else:
                 # WMF, EMF 등 미지원 형식은 플레이스홀더
                 if region.image_format:
@@ -482,21 +483,19 @@ class RTFBinaryProcessor:
 
 def preprocess_rtf_binary(
     content: bytes,
-    app_db=None,
     processed_images: Optional[Set[str]] = None
 ) -> Tuple[bytes, Dict[int, str]]:
     """
     RTF 콘텐츠에서 바이너리 데이터를 전처리합니다.
 
     \bin 태그의 바이너리 데이터를 제거하고,
-    이미지는 MinIO에 업로드하여 태그로 변환합니다.
+    이미지는 로컬에 저장하여 태그로 변환합니다.
 
     이 함수는 RTF 파서 전에 호출하여 바이너리 데이터로 인한
     텍스트 깨짐을 방지합니다.
 
     Args:
         content: RTF 파일 바이너리 콘텐츠
-        app_db: 데이터베이스 연결 (optional)
         processed_images: 처리된 이미지 해시 집합 (optional)
 
     Returns:
@@ -505,31 +504,29 @@ def preprocess_rtf_binary(
     Example:
         >>> with open('file.rtf', 'rb') as f:
         ...     raw_content = f.read()
-        >>> clean_content, image_tags = preprocess_rtf_binary(raw_content, app_db)
+        >>> clean_content, image_tags = preprocess_rtf_binary(raw_content)
         >>> # 이후 RTF 파서에 clean_content 전달
     """
-    processor = RTFBinaryProcessor(app_db, processed_images)
+    processor = RTFBinaryProcessor(processed_images)
     result = processor.process(content)
     return result.clean_content, result.image_tags
 
 
 def extract_rtf_images(
     content: bytes,
-    app_db=None,
     processed_images: Optional[Set[str]] = None
 ) -> List[str]:
     """
-    RTF 콘텐츠에서 모든 이미지를 추출하여 MinIO에 업로드합니다.
+    RTF 콘텐츠에서 모든 이미지를 추출하여 로컬에 저장합니다.
 
     Args:
         content: RTF 파일 바이너리 콘텐츠
-        app_db: 데이터베이스 연결 (optional)
         processed_images: 처리된 이미지 해시 집합 (optional)
 
     Returns:
         이미지 태그 리스트 (예: ["[image:bucket/uploads/hash.png]", ...])
     """
-    processor = RTFBinaryProcessor(app_db, processed_images)
+    processor = RTFBinaryProcessor(processed_images)
     result = processor.process(content)
 
     # 위치순으로 정렬된 이미지 태그 반환

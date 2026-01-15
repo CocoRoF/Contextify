@@ -23,7 +23,7 @@ except ImportError:
 logger = logging.getLogger("document-processor")
 
 
-def extract_charts_from_hwpx(zf: zipfile.ZipFile, app_db=None) -> List[str]:
+def extract_charts_from_hwpx(zf: zipfile.ZipFile) -> List[str]:
     """
     HWPX (ZIP) 파일에서 차트를 추출합니다.
 
@@ -33,7 +33,6 @@ def extract_charts_from_hwpx(zf: zipfile.ZipFile, app_db=None) -> List[str]:
 
     Args:
         zf: 열린 ZipFile 객체
-        app_db: 데이터베이스 연결 (이미지 업로드용)
 
     Returns:
         포맷된 차트 데이터 문자열 목록
@@ -50,12 +49,12 @@ def extract_charts_from_hwpx(zf: zipfile.ZipFile, app_db=None) -> List[str]:
 
         # 1. Look for OOXML chart files first (Chart/chart*.xml pattern)
         chart_results.extend(
-            _extract_ooxml_charts(zf, namelist, processed_chart_hashes, app_db)
+            _extract_ooxml_charts(zf, namelist, processed_chart_hashes)
         )
 
         # 2. Check BinData for OLE chart objects (fallback)
         chart_results.extend(
-            _extract_ole_charts(zf, namelist, processed_chart_hashes, app_db)
+            _extract_ole_charts(zf, namelist, processed_chart_hashes)
         )
 
     except Exception as e:
@@ -67,8 +66,7 @@ def extract_charts_from_hwpx(zf: zipfile.ZipFile, app_db=None) -> List[str]:
 def _extract_ooxml_charts(
     zf: zipfile.ZipFile,
     namelist: List[str],
-    processed_chart_hashes: Set[str],
-    app_db
+    processed_chart_hashes: Set[str]
 ) -> List[str]:
     """
     OOXML 형식의 차트 파일을 추출합니다.
@@ -77,7 +75,6 @@ def _extract_ooxml_charts(
         zf: 열린 ZipFile 객체
         namelist: ZIP 파일의 파일 목록
         processed_chart_hashes: 처리된 차트 해시 집합
-        app_db: 데이터베이스 연결
 
     Returns:
         포맷된 차트 데이터 문자열 목록
@@ -108,7 +105,7 @@ def _extract_ooxml_charts(
                 processed_chart_hashes.add(chart_hash)
 
                 # process_chart 사용 (테이블 우선, 실패 시 이미지)
-                formatted = ChartHelper.process_chart(chart_data, app_db)
+                formatted = ChartHelper.process_chart(chart_data)
                 if formatted:
                     chart_results.append(formatted)
                     logger.info(f"Extracted chart from HWPX: {chart_file}")
@@ -123,8 +120,7 @@ def _extract_ooxml_charts(
 def _extract_ole_charts(
     zf: zipfile.ZipFile,
     namelist: List[str],
-    processed_chart_hashes: Set[str],
-    app_db
+    processed_chart_hashes: Set[str]
 ) -> List[str]:
     """
     BinData에서 OLE 차트 객체를 추출합니다 (폴백).
@@ -133,7 +129,6 @@ def _extract_ole_charts(
         zf: 열린 ZipFile 객체
         namelist: ZIP 파일의 파일 목록
         processed_chart_hashes: 처리된 차트 해시 집합
-        app_db: 데이터베이스 연결
 
     Returns:
         포맷된 차트 데이터 문자열 목록
@@ -178,7 +173,7 @@ def _extract_ole_charts(
                 processed_chart_hashes.add(chart_hash)
 
                 # process_chart 사용 (테이블 우선, 실패 시 이미지)
-                formatted = ChartHelper.process_chart(chart_data, app_db)
+                formatted = ChartHelper.process_chart(chart_data)
                 if formatted:
                     chart_results.append(formatted)
                     logger.info(f"Extracted chart from HWPX BinData: {bindata_file}")

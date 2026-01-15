@@ -5,7 +5,6 @@ PDF 처리에 필요한 헬퍼 모듈들을 포함합니다.
 """
 
 from .pdf_helper import (
-    upload_image_to_minio,
     extract_pdf_metadata,
     format_metadata,
     escape_html,
@@ -94,7 +93,6 @@ from .table_quality_analyzer import (
 
 __all__ = [
     # pdf_helper
-    'upload_image_to_minio',
     'extract_pdf_metadata',
     'format_metadata',
     'escape_html',
