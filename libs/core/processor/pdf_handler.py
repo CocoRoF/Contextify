@@ -3,9 +3,8 @@
 PDF Handler - Adaptive Complexity-based PDF Processor
 
 =============================================================================
-V4 핵심 목표 (V3 기반 확장):
+핵심 기능:
 =============================================================================
-V3 기능 전체 유지 +
 1. 복잡도 분석 - 페이지/영역별 복잡도 점수 계산
 2. 적응형 처리 전략 - 복잡도에 따른 최적 전략 선택
 3. 블록 이미지화 - 복잡한 영역을 이미지로 렌더링
@@ -14,7 +13,7 @@ V3 기능 전체 유지 +
 6. 텍스트 품질 분석 - 벡터 텍스트 품질 자동 평가
 
 =============================================================================
-V4 아키텍처 (V3 확장):
+아키텍처:
 =============================================================================
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         PDF Document Input                               │
@@ -22,7 +21,7 @@ V4 아키텍처 (V3 확장):
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                 ★ Phase 0: Complexity Analysis (V4 신규)                 │
+│                    Phase 0: Complexity Analysis                          │
 │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐                │
 │  │ Drawing       │  │ Text Quality  │  │ Layout        │                │
 │  │ Density       │  │ Analysis      │  │ Complexity    │                │
@@ -73,7 +72,7 @@ V4 아키텍처 (V3 확장):
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│             ★ Phase 4.5: Block Image Upload (V4 신규)                    │
+│                    Phase 4.5: Block Image Upload                         │
 │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐                │
 │  │ Complex Region│  │ High-DPI      │  │ Local         │                │
 │  │ Detection     │  │ Rendering     │  │ Upload        │                │
@@ -141,11 +140,11 @@ _image_processor = ImageProcessor(
     tag_suffix="]"
 )
 
-# V3.1 모듈화된 컴포넌트 import
+# 모듈화된 컴포넌트 import
 from libs.core.processor.pdf_helpers.v3_types import (
     TableDetectionStrategy as TableDetectionStrategyType,
     ElementType,
-    V3Config as V3ConfigBase,
+    V3Config as PDFConfigBase,
     LineInfo,
     GridInfo,
     CellInfo,
@@ -167,7 +166,7 @@ from libs.core.processor.pdf_helpers.text_quality_analyzer import (
     TextQualityConfig,
 )
 
-# V4 신규 모듈
+# 복잡도 분석 모듈
 from libs.core.processor.pdf_helpers.complexity_analyzer import (
     ComplexityAnalyzer,
     ComplexityLevel,
@@ -221,11 +220,11 @@ except Exception:
 
 
 # ============================================================================
-# V3 설정 확장 (v3_types.V3Config 기반)
+# 설정 확장 (PDFConfigBase 기반)
 # ============================================================================
 
-class V3Config(V3ConfigBase):
-    """V3 설정 상수 - 기본값 + 추가 설정"""
+class PDFConfig(PDFConfigBase):
+    """PDF 처리 설정 상수 - 기본값 + 추가 설정"""
     # 선 분석
     THIN_LINE_THRESHOLD = 0.5      # pt
     THICK_LINE_THRESHOLD = 2.0     # pt
@@ -260,8 +259,8 @@ class V3Config(V3ConfigBase):
     IMAGE_AREA_MARGIN = 5.0               # 이미지 주변 마진 (pt)
 
 
-class V4Config:
-    """V4 설정 상수 - 적응형 복잡도 기반 처리"""
+class AdaptiveConfig:
+    """적응형 복잡도 기반 처리 설정 상수"""
 
     # ========== 복잡도 분석 설정 ==========
     # 복잡도 임계값
@@ -319,12 +318,12 @@ TableDetectionStrategy = TableDetectionStrategyType
 
 
 # ============================================================================
-# V3 전용 타입 정의 (기존 코드와의 호환성을 위해)
+# 내부 타입 정의
 # ============================================================================
 
 @dataclass
-class TableCandidateV3:
-    """테이블 후보 - V3 내부 사용 (확장된 버전)"""
+class TableCandidate:
+    """테이블 후보 - 내부 사용"""
     strategy: TableDetectionStrategy
     confidence: float
     bbox: Tuple[float, float, float, float]
@@ -343,8 +342,8 @@ class TableCandidateV3:
 
 
 @dataclass
-class AnnotationInfoV3:
-    """주석/각주/미주 정보 - V3 내부 사용"""
+class AnnotationInfo:
+    """주석/각주/미주 정보"""
     text: str
     bbox: Tuple[float, float, float, float]
     type: str  # 'footnote', 'endnote', 'table_note'
@@ -352,8 +351,8 @@ class AnnotationInfoV3:
 
 
 @dataclass
-class PageElementV3(PageElement):
-    """페이지 내 요소 - V3 확장"""
+class PageElementExtended(PageElement):
+    """페이지 내 요소 - 확장"""
 
     @property
     def sort_key(self) -> Tuple[float, float]:
@@ -372,7 +371,7 @@ class TableInfo:
     row_count: int
     page_height: float
     cells_info: Optional[List[Dict]] = None
-    annotations: Optional[List[AnnotationInfoV3]] = None
+    annotations: Optional[List[AnnotationInfo]] = None
     detection_strategy: Optional[TableDetectionStrategy] = None
     confidence: float = 1.0
 
@@ -390,7 +389,7 @@ async def extract_text_from_pdf(
     PDF text extraction (adaptive complexity-based processing).
 
     Analyzes page complexity first and selects optimal processing strategy:
-    - SIMPLE: Standard text extraction (V3 logic)
+    - SIMPLE: Standard text extraction
     - MODERATE: Hybrid processing (text + partial OCR)
     - COMPLEX: Block imaging + OCR
     - EXTREME: Full page OCR
@@ -407,55 +406,28 @@ async def extract_text_from_pdf(
         current_config = {}
 
     logger.info(f"[PDF] Processing: {file_path}")
-    return await _extract_pdf_enhanced_v4(file_path, current_config, extract_default_metadata)
-
-
-# V3 호환 함수 (기존 코드 호환성 유지)
-async def extract_text_from_pdf_v3(
-    file_path: str,
-    current_config: Dict[str, Any] = None,
-    process_type: str = "enhanced",
-    extract_default_metadata: bool = True
-) -> str:
-    """
-    PDF 텍스트 추출 V3 (최고 수준의 테이블 처리).
-    V4의 V3 호환 모드. 복잡도 분석 없이 기존 V3 로직만 사용합니다.
-
-    Args:
-        file_path: PDF 파일 경로
-        current_config: 설정 딕셔너리
-        process_type: 처리 유형
-        extract_default_metadata: 메타데이터 추출 여부 (기본값: True)
-
-    Returns:
-        추출된 텍스트 (인라인 이미지 태그, 테이블 HTML 포함)
-    """
-    if current_config is None:
-        current_config = {}
-
-    logger.info(f"[PDF-V3] Processing: {file_path}")
-    return await _extract_pdf_enhanced_v3(file_path, current_config, extract_default_metadata)
+    return await _extract_pdf_enhanced(file_path, current_config, extract_default_metadata)
 
 
 # ============================================================================
-# V4 핵심 처리 로직
+# 핵심 처리 로직
 # ============================================================================
 
-async def _extract_pdf_enhanced_v4(
+async def _extract_pdf_enhanced(
     file_path: str,
     current_config: Dict[str, Any],
     extract_default_metadata: bool = True
 ) -> str:
     """
-    고도화된 PDF 처리 V4 - 적응형 복잡도 기반.
+    고도화된 PDF 처리 - 적응형 복잡도 기반.
 
     처리 순서:
     1. 문서 열기 및 메타데이터 추출
     2. 각 페이지에 대해:
-       a. ★ 복잡도 분석 (V4 신규)
-       b. ★ 처리 전략 결정 (V4 신규)
+       a. 복잡도 분석
+       b. 처리 전략 결정
        c. 전략에 따른 처리:
-          - TEXT_EXTRACTION: 기존 V3 로직
+          - TEXT_EXTRACTION: 표준 텍스트 추출
           - HYBRID: 텍스트 + 부분 OCR
           - BLOCK_IMAGE_OCR: 복잡 영역 이미지화 + OCR
           - FULL_PAGE_OCR: 전체 페이지 OCR
@@ -477,47 +449,47 @@ async def _extract_pdf_enhanced_v4(
             if metadata_text:
                 all_pages_text.append(metadata_text)
 
-        # 전체 문서 테이블 추출 (V3 엔진 사용)
-        all_tables = _extract_all_tables_v3(doc, file_path)
+        # 전체 문서 테이블 추출
+        all_tables = _extract_all_tables(doc, file_path)
 
         # 페이지별 처리
         for page_num in range(len(doc)):
             page = doc[page_num]
 
-            logger.debug(f"[PDF-V4] Processing page {page_num + 1}")
+            logger.debug(f"[PDF] Processing page {page_num + 1}")
 
-            # ★ Phase 0: 복잡도 분석 (V4 신규)
+            # Phase 0: 복잡도 분석
             complexity_analyzer = ComplexityAnalyzer(page, page_num)
             page_complexity = complexity_analyzer.analyze()
 
-            logger.info(f"[PDF-V4] Page {page_num + 1}: "
+            logger.info(f"[PDF] Page {page_num + 1}: "
                        f"complexity={page_complexity.overall_complexity.name}, "
                        f"score={page_complexity.overall_score:.2f}, "
                        f"strategy={page_complexity.recommended_strategy.name}")
 
-            # ★ 처리 전략에 따른 분기 (V4 신규)
+            # 처리 전략에 따른 분기
             strategy = page_complexity.recommended_strategy
 
             if strategy == ProcessingStrategy.FULL_PAGE_OCR:
                 # 전체 페이지 OCR
-                page_text = await _process_page_full_ocr_v4(
+                page_text = await _process_page_full_ocr(
                     page, page_num, doc, processed_images, all_tables
                 )
             elif strategy == ProcessingStrategy.BLOCK_IMAGE_OCR:
                 # 복잡 영역 블록 이미지화 + OCR
-                page_text = await _process_page_block_ocr_v4(
+                page_text = await _process_page_block_ocr(
                     page, page_num, doc, processed_images, all_tables,
                     page_complexity.complex_regions
                 )
             elif strategy == ProcessingStrategy.HYBRID:
                 # 하이브리드 (텍스트 + 부분 OCR)
-                page_text = await _process_page_hybrid_v4(
+                page_text = await _process_page_hybrid(
                     page, page_num, doc, processed_images, all_tables,
                     page_complexity
                 )
             else:
-                # TEXT_EXTRACTION: 기존 V3 로직
-                page_text = await _process_page_text_extraction_v4(
+                # TEXT_EXTRACTION: 표준 텍스트 추출
+                page_text = await _process_page_text_extraction(
                     page, page_num, doc, processed_images, all_tables
                 )
 
@@ -527,28 +499,28 @@ async def _extract_pdf_enhanced_v4(
         doc.close()
 
         final_text = "\n\n".join(all_pages_text)
-        logger.info(f"[PDF-V4] Extracted {len(final_text)} chars from {file_path}")
+        logger.info(f"[PDF] Extracted {len(final_text)} chars from {file_path}")
 
         return final_text
 
     except Exception as e:
-        logger.error(f"[PDF-V4] Error processing {file_path}: {e}")
+        logger.error(f"[PDF] Error processing {file_path}: {e}")
         logger.debug(traceback.format_exc())
         raise
 
 
-async def _process_page_text_extraction_v4(
+async def _process_page_text_extraction(
     page, page_num: int, doc, processed_images: Set[int],
     all_tables: Dict[int, List[PageElement]]
 ) -> str:
     """
-    TEXT_EXTRACTION 전략 - 기존 V3 로직 사용.
+    TEXT_EXTRACTION 전략 - 표준 텍스트 추출.
     단순한 페이지에 적합합니다.
     """
     page_elements: List[PageElement] = []
 
     # 1. 페이지 테두리 분석
-    border_info = _detect_page_border_v3(page)
+    border_info = _detect_page_border(page)
 
     # 1.5. 벡터 텍스트(Outlined/Path Text) 감지 및 OCR
     vector_text_engine = VectorTextOCREngine(page, page_num)
@@ -572,20 +544,20 @@ async def _process_page_text_extraction_v4(
     table_bboxes = [elem.bbox for elem in page_tables]
 
     # 4. 텍스트 추출 (테이블 영역 제외)
-    text_elements = _extract_text_blocks_v3(page, page_num, table_bboxes, border_info)
+    text_elements = _extract_text_blocks(page, page_num, table_bboxes, border_info)
     page_elements.extend(text_elements)
 
     # 5. 이미지 추출
-    image_elements = await _extract_images_from_page_v3(
+    image_elements = await _extract_images_from_page(
         page, page_num, doc, processed_images, table_bboxes
     )
     page_elements.extend(image_elements)
 
     # 6. 요소 정렬 및 병합
-    return _merge_page_elements_v3(page_elements)
+    return _merge_page_elements(page_elements)
 
 
-async def _process_page_hybrid_v4(
+async def _process_page_hybrid(
     page, page_num: int, doc, processed_images: Set[int],
     all_tables: Dict[int, List[PageElement]],
     page_complexity: PageComplexity
@@ -597,8 +569,8 @@ async def _process_page_hybrid_v4(
     """
     page_elements: List[PageElement] = []
 
-    # 1. 기본 텍스트 추출 (V3 로직)
-    border_info = _detect_page_border_v3(page)
+    # 1. 기본 텍스트 추출
+    border_info = _detect_page_border(page)
 
     # 벡터 텍스트 OCR
     vector_text_engine = VectorTextOCREngine(page, page_num)
@@ -624,7 +596,7 @@ async def _process_page_hybrid_v4(
     complex_bboxes = page_complexity.complex_regions
 
     # 4. 단순 영역: 텍스트 추출
-    text_elements = _extract_text_blocks_v3(page, page_num, table_bboxes, border_info)
+    text_elements = _extract_text_blocks(page, page_num, table_bboxes, border_info)
 
     # 복잡 영역과 겹치지 않는 텍스트만 사용
     for elem in text_elements:
@@ -652,16 +624,16 @@ async def _process_page_hybrid_v4(
                 ))
 
     # 6. 이미지 추출
-    image_elements = await _extract_images_from_page_v3(
+    image_elements = await _extract_images_from_page(
         page, page_num, doc, processed_images, table_bboxes
     )
     page_elements.extend(image_elements)
 
     # 7. 요소 정렬 및 병합
-    return _merge_page_elements_v3(page_elements)
+    return _merge_page_elements(page_elements)
 
 
-async def _process_page_block_ocr_v4(
+async def _process_page_block_ocr(
     page, page_num: int, doc, processed_images: Set[int],
     all_tables: Dict[int, List[PageElement]],
     complex_regions: List[Tuple[float, float, float, float]]
@@ -700,8 +672,8 @@ async def _process_page_block_ocr_v4(
                 ))
 
     # 3. 단순 영역: 텍스트 추출
-    border_info = _detect_page_border_v3(page)
-    text_elements = _extract_text_blocks_v3(page, page_num, table_bboxes, border_info)
+    border_info = _detect_page_border(page)
+    text_elements = _extract_text_blocks(page, page_num, table_bboxes, border_info)
 
     for elem in text_elements:
         is_in_complex = any(
@@ -711,36 +683,36 @@ async def _process_page_block_ocr_v4(
             page_elements.append(elem)
 
     # 4. 이미지 추출
-    image_elements = await _extract_images_from_page_v3(
+    image_elements = await _extract_images_from_page(
         page, page_num, doc, processed_images, table_bboxes
     )
     page_elements.extend(image_elements)
 
-    return _merge_page_elements_v3(page_elements)
+    return _merge_page_elements(page_elements)
 
 
-async def _process_page_full_ocr_v4(
+async def _process_page_full_ocr(
     page, page_num: int, doc, processed_images: Set[int],
     all_tables: Dict[int, List[PageElement]]
 ) -> str:
     """
-    ★ FULL_PAGE_OCR 전략 - 고도화된 스마트 블록 처리 (V4.2)
+    FULL_PAGE_OCR 전략 - 고도화된 스마트 블록 처리
 
     극도로 복잡한 페이지(신문, 잡지 등 다단 레이아웃)에 적합합니다.
 
-    V4.2 개선사항:
+    개선사항:
     - 테이블 품질 분석 후 처리 가능한 테이블은 텍스트/구조로 추출
     - 블록별로 최적의 처리 전략 선택
     - 이미지 변환은 정말 필요한 영역만
 
     처리 흐름:
     1. 먼저 테이블 품질 분석하여 처리 가능 여부 확인
-    2. 처리 가능한 테이블은 V3 방식으로 구조화 추출
+    2. 처리 가능한 테이블은 구조화 추출
     3. 나머지 복잡 영역만 블록 이미지화
     """
     page_elements: List[PageElement] = []
 
-    # ★ Phase 1: 테이블 품질 분석
+    # Phase 1: 테이블 품질 분석
     table_quality_analyzer = TableQualityAnalyzer(page)
     table_quality_result = table_quality_analyzer.analyze_page_tables()
 
@@ -754,15 +726,15 @@ async def _process_page_full_ocr_v4(
 
             # EXCELLENT, GOOD, MODERATE = 처리 가능
             if quality in (TableQuality.EXCELLENT, TableQuality.GOOD, TableQuality.MODERATE):
-                # 처리 가능한 테이블 → V3 방식으로 추출
-                logger.info(f"[PDF-V4] Page {page_num + 1}: Processable table found "
+                # 처리 가능한 테이블 → 구조화 추출
+                logger.info(f"[PDF] Page {page_num + 1}: Processable table found "
                            f"(quality={quality.name}) at {bbox}")
             else:
                 # 처리 불가 테이블 (POOR, UNPROCESSABLE) → 이미지화 대상
                 if bbox:
                     unprocessable_table_bboxes.append(bbox)
 
-    # ★ Phase 2: 처리 가능한 테이블이 있으면 V3 방식으로 추출 시도
+    # Phase 2: 처리 가능한 테이블이 있으면 구조화 추출 시도
     page_tables = all_tables.get(page_num, [])
     has_processable_tables = len(page_tables) > 0 or (
         table_quality_result and
@@ -771,7 +743,7 @@ async def _process_page_full_ocr_v4(
     )
 
     if has_processable_tables:
-        logger.info(f"[PDF-V4] Page {page_num + 1}: Found processable tables, "
+        logger.info(f"[PDF] Page {page_num + 1}: Found processable tables, "
                    f"using hybrid extraction instead of full OCR")
 
         # 테이블을 페이지 요소로 추가
@@ -780,23 +752,23 @@ async def _process_page_full_ocr_v4(
             page_elements.append(table_element)
 
         # 테이블 영역 외의 텍스트 추출
-        border_info = _detect_page_border_v3(page)
-        text_elements = _extract_text_blocks_v3(page, page_num, table_bboxes, border_info)
+        border_info = _detect_page_border(page)
+        text_elements = _extract_text_blocks(page, page_num, table_bboxes, border_info)
         page_elements.extend(text_elements)
 
         # 테이블 영역 외의 이미지 추출
-        image_elements = await _extract_images_from_page_v3(
+        image_elements = await _extract_images_from_page(
             page, page_num, doc, processed_images, table_bboxes
         )
         page_elements.extend(image_elements)
 
-        logger.info(f"[PDF-V4] Page {page_num + 1}: Hybrid extraction completed - "
+        logger.info(f"[PDF] Page {page_num + 1}: Hybrid extraction completed - "
                    f"tables={len(page_tables)}, text_blocks={len(text_elements)}, "
                    f"images={len(image_elements)}")
 
-        return _merge_page_elements_v3(page_elements)
+        return _merge_page_elements(page_elements)
 
-    # ★ Phase 3: 테이블 처리가 불가능하면 스마트 블록 처리
+    # Phase 3: 테이블 처리가 불가능하면 스마트 블록 처리
     block_engine = BlockImageEngine(page, page_num)
     multi_result: MultiBlockResult = await block_engine.process_page_smart()
 
@@ -811,12 +783,12 @@ async def _process_page_full_ocr_v4(
                     page_num=page_num
                 ))
 
-        logger.info(f"[PDF-V4] Page {page_num + 1}: Smart block processing - "
+        logger.info(f"[PDF] Page {page_num + 1}: Smart block processing - "
                    f"strategy={multi_result.strategy_used.name}, "
                    f"blocks={multi_result.successful_blocks}/{multi_result.total_blocks}")
     else:
         # 폴백: 전체 페이지 이미지화
-        logger.warning(f"[PDF-V4] Page {page_num + 1}: Smart processing failed, "
+        logger.warning(f"[PDF] Page {page_num + 1}: Smart processing failed, "
                       f"falling back to full page image")
 
         result = await block_engine.process_full_page(region_type="full_page")
@@ -828,27 +800,27 @@ async def _process_page_full_ocr_v4(
                 bbox=(0, 0, page.rect.width, page.rect.height),
                 page_num=page_num
             ))
-            logger.info(f"[PDF-V4] Page {page_num + 1}: Full page image saved: {result.image_path}")
+            logger.info(f"[PDF] Page {page_num + 1}: Full page image saved: {result.image_path}")
         else:
             # 최후의 폴백: 텍스트 추출
-            logger.warning(f"[PDF-V4] Page {page_num + 1}: Full page image failed, "
+            logger.warning(f"[PDF] Page {page_num + 1}: Full page image failed, "
                           f"falling back to text extraction")
-            border_info = _detect_page_border_v3(page)
+            border_info = _detect_page_border(page)
             page_tables = all_tables.get(page_num, [])
             table_bboxes = [elem.bbox for elem in page_tables]
 
             for table_element in page_tables:
                 page_elements.append(table_element)
 
-            text_elements = _extract_text_blocks_v3(page, page_num, table_bboxes, border_info)
+            text_elements = _extract_text_blocks(page, page_num, table_bboxes, border_info)
             page_elements.extend(text_elements)
 
-            image_elements = await _extract_images_from_page_v3(
+            image_elements = await _extract_images_from_page(
                 page, page_num, doc, processed_images, table_bboxes
             )
             page_elements.extend(image_elements)
 
-    return _merge_page_elements_v3(page_elements)
+    return _merge_page_elements(page_elements)
 
 
 def _bbox_overlaps(bbox1: Tuple, bbox2: Tuple) -> bool:
@@ -862,114 +834,12 @@ def _bbox_overlaps(bbox1: Tuple, bbox2: Tuple) -> bool:
 
 
 # ============================================================================
-# V3 호환 핵심 처리 로직
-# ============================================================================
-
-async def _extract_pdf_enhanced_v3(
-    file_path: str,
-    current_config: Dict[str, Any],
-    extract_default_metadata: bool = True
-) -> str:
-    """
-    고도화된 PDF 처리 V3.
-
-    처리 순서:
-    1. 문서 열기 및 메타데이터 추출
-    2. 각 페이지에 대해:
-       a. 선 분석 (Line Analysis Engine)
-       b. 테이블 감지 (Table Detection Engine - 다중 전략)
-       c. 셀 분석 (Cell Analysis Engine)
-       d. 주석 통합 (Annotation Integration)
-       e. 텍스트/이미지 추출
-    3. 페이지 간 테이블 연속성 처리
-    4. 최종 HTML 생성 및 통합
-    """
-    if not PYMUPDF_AVAILABLE:
-        raise ImportError("PyMuPDF is required for PDF processing")
-
-    try:
-        doc = fitz.open(file_path)
-        all_pages_text = []
-        processed_images: Set[int] = set()
-
-        # 메타데이터 추출 (extract_default_metadata가 True인 경우에만)
-        if extract_default_metadata:
-            metadata = extract_pdf_metadata(doc)
-            metadata_text = format_metadata(metadata)
-            if metadata_text:
-                all_pages_text.append(metadata_text)
-
-        # 전체 문서 테이블 추출 (V3 엔진 사용)
-        all_tables = _extract_all_tables_v3(doc, file_path)
-
-        # 페이지별 처리
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            page_elements: List[PageElement] = []
-
-            logger.debug(f"[PDF-V3] Processing page {page_num + 1}")
-
-            # 1. 페이지 테두리 분석
-            border_info = _detect_page_border_v3(page)
-
-            # 1.5. 벡터 텍스트(Outlined/Path Text) 감지 및 OCR
-            vector_text_engine = VectorTextOCREngine(page, page_num)
-            vector_text_regions = vector_text_engine.detect_and_extract()
-
-            # 벡터 텍스트 OCR 결과를 PageElement로 변환하여 추가
-            for region in vector_text_regions:
-                if region.ocr_text and region.confidence > 0.3:
-                    page_elements.append(PageElement(
-                        element_type=ElementType.TEXT,
-                        content=region.ocr_text,
-                        bbox=region.bbox,
-                        page_num=page_num
-                    ))
-
-            # 2. 해당 페이지의 테이블 가져오기
-            page_tables = all_tables.get(page_num, [])
-
-            for table_element in page_tables:
-                page_elements.append(table_element)
-
-            # 3. 테이블 영역 계산 (텍스트 필터링용)
-            table_bboxes = [elem.bbox for elem in page_tables]
-
-            # 4. 텍스트 추출 (테이블 영역 제외)
-            text_elements = _extract_text_blocks_v3(page, page_num, table_bboxes, border_info)
-            page_elements.extend(text_elements)
-
-            # 5. 이미지 추출
-            image_elements = await _extract_images_from_page_v3(
-                page, page_num, doc, processed_images, table_bboxes
-            )
-            page_elements.extend(image_elements)
-
-            # 6. 요소 정렬 및 병합
-            page_text = _merge_page_elements_v3(page_elements)
-            if page_text.strip():
-                all_pages_text.append(f"<Page {page_num + 1}>\n{page_text}\n</Page {page_num + 1}>")
-
-        doc.close()
-
-        final_text = "\n\n".join(all_pages_text)
-        logger.info(f"[PDF-V3] Extracted {len(final_text)} chars from {file_path}")
-
-        return final_text
-
-    except Exception as e:
-        logger.error(f"[PDF-V3] Error processing {file_path}: {e}")
-        logger.debug(traceback.format_exc())
-        raise
-
-
-# ============================================================================
 # 테이블 추출 함수
 # ============================================================================
 
-def _extract_all_tables_v3(doc, file_path: str) -> Dict[int, List[PageElement]]:
+def _extract_all_tables(doc, file_path: str) -> Dict[int, List[PageElement]]:
     """
-    문서 전체에서 테이블을 추출합니다 (V3).
+    문서 전체에서 테이블을 추출합니다.
 
     전략:
     1. 다중 전략 테이블 감지
@@ -987,7 +857,7 @@ def _extract_all_tables_v3(doc, file_path: str) -> Dict[int, List[PageElement]]:
         page_height = page.rect.height
 
         # 페이지 테두리 감지
-        border_info = _detect_page_border_v3(page)
+        border_info = _detect_page_border(page)
 
         try:
             # 테이블 감지 엔진 사용
@@ -996,8 +866,8 @@ def _extract_all_tables_v3(doc, file_path: str) -> Dict[int, List[PageElement]]:
 
             for idx, candidate in enumerate(candidates):
                 # 페이지 테두리와 겹치는지 확인
-                if border_info.has_border and _is_table_likely_border_v3(candidate.bbox, border_info, page):
-                    logger.debug(f"[PDF-V3] Skipping page border table: {candidate.bbox}")
+                if border_info.has_border and _is_table_likely_border(candidate.bbox, border_info, page):
+                    logger.debug(f"[PDF] Skipping page border table: {candidate.bbox}")
                     continue
 
                 # 셀 정보를 딕셔너리로 변환
@@ -1030,17 +900,17 @@ def _extract_all_tables_v3(doc, file_path: str) -> Dict[int, List[PageElement]]:
                 all_table_infos.append(table_info)
 
         except Exception as e:
-            logger.debug(f"[PDF-V3] Error detecting tables on page {page_num}: {e}")
+            logger.debug(f"[PDF] Error detecting tables on page {page_num}: {e}")
             continue
 
     # 2단계: 인접 테이블 병합
-    merged_tables = _merge_adjacent_tables_v3(all_table_infos)
+    merged_tables = _merge_adjacent_tables(all_table_infos)
 
     # 3단계: 주석 행 찾아서 삽입
-    merged_tables = _find_and_insert_annotations_v3(doc, merged_tables)
+    merged_tables = _find_and_insert_annotations(doc, merged_tables)
 
     # 4단계: 테이블 연속성 처리
-    processed_tables = _process_table_continuity_v3(merged_tables)
+    processed_tables = _process_table_continuity(merged_tables)
 
     # 5단계: HTML 변환 및 PageElement 생성
     # 1열 테이블은 TEXT로, 2열 이상은 TABLE로 처리
@@ -1069,7 +939,7 @@ def _extract_all_tables_v3(doc, file_path: str) -> Dict[int, List[PageElement]]:
                     single_col_count += 1
             else:
                 # 2열 이상: HTML 테이블로 변환
-                html_table = _convert_table_to_html_v3(table_info)
+                html_table = _convert_table_to_html(table_info)
 
                 if html_table:
                     tables_by_page[page_num].append(PageElement(
@@ -1081,12 +951,12 @@ def _extract_all_tables_v3(doc, file_path: str) -> Dict[int, List[PageElement]]:
                     real_table_count += 1
 
         except Exception as e:
-            logger.debug(f"[PDF-V3] Error converting table to HTML: {e}")
+            logger.debug(f"[PDF] Error converting table to HTML: {e}")
             continue
 
     if single_col_count > 0:
-        logger.info(f"[PDF-V4] Converted {single_col_count} single-column tables to text")
-    logger.info(f"[PDF-V3] Extracted {real_table_count} tables from {len(tables_by_page)} pages")
+        logger.info(f"[PDF] Converted {single_col_count} single-column tables to text")
+    logger.info(f"[PDF] Extracted {real_table_count} tables from {len(tables_by_page)} pages")
     return tables_by_page
 
 
@@ -1094,7 +964,7 @@ def _extract_all_tables_v3(doc, file_path: str) -> Dict[int, List[PageElement]]:
 # Phase 4: Annotation Integration
 # ============================================================================
 
-def _find_and_insert_annotations_v3(doc, tables: List[TableInfo]) -> List[TableInfo]:
+def _find_and_insert_annotations(doc, tables: List[TableInfo]) -> List[TableInfo]:
     """
     테이블 내부 및 직후에 주석/각주/미주를 찾아서 통합합니다.
 
@@ -1131,18 +1001,18 @@ def _find_and_insert_annotations_v3(doc, tables: List[TableInfo]) -> List[TableI
             annotation_lines = []
             for line in text_lines:
                 # 테이블 바로 아래, 다음 테이블 전
-                if table_bottom - 3 <= line['y0'] <= table_bottom + V3Config.ANNOTATION_Y_MARGIN:
+                if table_bottom - 3 <= line['y0'] <= table_bottom + PDFConfig.ANNOTATION_Y_MARGIN:
                     if line['x0'] >= table_left - 10 and line['x1'] <= table_right + 10:
                         if line['y0'] < next_table_top - 20:
                             # 주석 패턴 확인
-                            for pattern in V3Config.ANNOTATION_PATTERNS:
+                            for pattern in PDFConfig.ANNOTATION_PATTERNS:
                                 if line['text'].startswith(pattern):
                                     annotation_lines.append(line)
                                     break
 
             if annotation_lines:
                 table = _add_annotation_to_table(table, annotation_lines, 'footer')
-                logger.debug(f"[PDF-V3] Added annotation to table on page {page_num + 1}")
+                logger.debug(f"[PDF] Added annotation to table on page {page_num + 1}")
 
             # 2. 서브헤더 행 찾기 (예: (A), (B)) - 이미 서브헤더가 없을 때만
             has_subheader = False
@@ -1169,7 +1039,7 @@ def _find_and_insert_annotations_v3(doc, tables: List[TableInfo]) -> List[TableI
 
                 if subheader_lines:
                     table = _add_annotation_to_table(table, subheader_lines, 'subheader')
-                    logger.debug(f"[PDF-V3] Added subheader to table on page {page_num + 1}")
+                    logger.debug(f"[PDF] Added subheader to table on page {page_num + 1}")
 
             result.append(table)
 
@@ -1324,13 +1194,13 @@ def _convert_single_column_to_text(table_info: TableInfo) -> str:
     return '\n'.join(lines)
 
 
-def _convert_table_to_html_v3(table_info: TableInfo) -> str:
+def _convert_table_to_html(table_info: TableInfo) -> str:
     """
-    테이블을 HTML로 변환 (V3.3 개선).
+    테이블을 HTML로 변환.
 
-    V3.3 개선사항:
+    개선사항:
     1. PyMuPDF 셀 정보 우선 사용
-    2. CellAnalysisEngine V3.3 적용
+    2. CellAnalysisEngine 적용
     3. 정확한 rowspan/colspan 처리
     4. 주석 행 전체 colspan 처리
     5. 접근성 고려한 시맨틱 HTML
@@ -1371,7 +1241,7 @@ def _generate_html_from_cells_v2(
     num_cols: int
 ) -> str:
     """
-    V3.3: 개선된 HTML 생성
+    개선된 HTML 생성
 
     개선사항:
     - 셀 정보가 불완전해도 모든 셀 처리
@@ -1419,7 +1289,7 @@ def _generate_html_from_cells_v2(
         first_val = str(row[0]).strip() if row[0] else ""
 
         is_annotation = False
-        for pattern in V3Config.ANNOTATION_PATTERNS:
+        for pattern in PDFConfig.ANNOTATION_PATTERNS:
             if first_val.startswith(pattern):
                 is_annotation = True
                 break
@@ -1474,7 +1344,7 @@ def _generate_html_from_cells_v2(
 # 테이블 병합 및 연속성 처리
 # ============================================================================
 
-def _merge_adjacent_tables_v3(tables: List[TableInfo]) -> List[TableInfo]:
+def _merge_adjacent_tables(tables: List[TableInfo]) -> List[TableInfo]:
     """인접 테이블 병합"""
     if not tables:
         return tables
@@ -1496,10 +1366,10 @@ def _merge_adjacent_tables_v3(tables: List[TableInfo]) -> List[TableInfo]:
             while i + 1 < len(sorted_tables):
                 next_table = sorted_tables[i + 1]
 
-                if _should_merge_tables_v3(merged, next_table):
-                    merged = _do_merge_tables_v3(merged, next_table)
+                if _should_merge_tables(merged, next_table):
+                    merged = _do_merge_tables(merged, next_table)
                     i += 1
-                    logger.debug(f"[PDF-V3] Merged adjacent tables on page {page_num + 1}")
+                    logger.debug(f"[PDF] Merged adjacent tables on page {page_num + 1}")
                 else:
                     break
 
@@ -1510,7 +1380,7 @@ def _merge_adjacent_tables_v3(tables: List[TableInfo]) -> List[TableInfo]:
     return merged_result
 
 
-def _should_merge_tables_v3(t1: TableInfo, t2: TableInfo) -> bool:
+def _should_merge_tables(t1: TableInfo, t2: TableInfo) -> bool:
     """두 테이블 병합 여부 판단"""
     if t1.page_num != t2.page_num:
         return False
@@ -1538,11 +1408,11 @@ def _should_merge_tables_v3(t1: TableInfo, t2: TableInfo) -> bool:
     return False
 
 
-def _do_merge_tables_v3(t1: TableInfo, t2: TableInfo) -> TableInfo:
+def _do_merge_tables(t1: TableInfo, t2: TableInfo) -> TableInfo:
     """
-    두 테이블 병합 수행 (V3.3 개선)
+    두 테이블 병합 수행
 
-    V3.3 개선:
+    개선:
     - cells_info가 없어도 기본 셀 정보 유지
     - 병합 후 셀 인덱스 정확하게 조정
     """
@@ -1625,7 +1495,7 @@ def _do_merge_tables_v3(t1: TableInfo, t2: TableInfo) -> TableInfo:
             adjusted_cell['row'] = cell.get('row', 0) + row_offset
             merged_cells.append(adjusted_cell)
 
-    # V3.3: 셀 정보가 비어있으면 None으로 (CellAnalysisEngine에서 처리)
+    # 셀 정보가 비어있으면 None으로 (CellAnalysisEngine에서 처리)
     final_cells_info = merged_cells if merged_cells else None
 
     return TableInfo(
@@ -1642,7 +1512,7 @@ def _do_merge_tables_v3(t1: TableInfo, t2: TableInfo) -> TableInfo:
     )
 
 
-def _process_table_continuity_v3(all_tables: List[TableInfo]) -> List[TableInfo]:
+def _process_table_continuity(all_tables: List[TableInfo]) -> List[TableInfo]:
     """페이지 간 테이블 연속성 처리"""
     if not all_tables:
         return all_tables
@@ -1668,7 +1538,7 @@ def _process_table_continuity_v3(all_tables: List[TableInfo]) -> List[TableInfo]
         curr_data = table_info.data
 
         if i == 0:
-            last_category = _extract_last_category_v3(curr_data)
+            last_category = _extract_last_category(curr_data)
             result.append(table_info)
             continue
 
@@ -1692,7 +1562,7 @@ def _process_table_continuity_v3(all_tables: List[TableInfo]) -> List[TableInfo]
                     elif first_col and str(first_col).strip():
                         last_category = first_col
         else:
-            new_last = _extract_last_category_v3(curr_data)
+            new_last = _extract_last_category(curr_data)
             if new_last:
                 last_category = new_last
 
@@ -1701,7 +1571,7 @@ def _process_table_continuity_v3(all_tables: List[TableInfo]) -> List[TableInfo]
     return result
 
 
-def _extract_last_category_v3(table_data: List[List[Optional[str]]]) -> Optional[str]:
+def _extract_last_category(table_data: List[List[Optional[str]]]) -> Optional[str]:
     """테이블에서 마지막 카테고리 추출"""
     if not table_data:
         return None
@@ -1716,12 +1586,12 @@ def _extract_last_category_v3(table_data: List[List[Optional[str]]]) -> Optional
 
 
 # ============================================================================
-# 페이지 테두리 감지 (V3)
+# 페이지 테두리 감지
 # ============================================================================
 
-def _detect_page_border_v3(page) -> PageBorderInfo:
+def _detect_page_border(page) -> PageBorderInfo:
     """
-    페이지 테두리(장식용)를 감지합니다 (V3).
+    페이지 테두리(장식용)를 감지합니다.
 
     개선점:
     1. 얇은 선도 감지
@@ -1737,8 +1607,8 @@ def _detect_page_border_v3(page) -> PageBorderInfo:
     page_width = page.rect.width
     page_height = page.rect.height
 
-    edge_margin = min(page_width, page_height) * V3Config.PAGE_BORDER_MARGIN
-    page_spanning_ratio = V3Config.PAGE_SPANNING_RATIO
+    edge_margin = min(page_width, page_height) * PDFConfig.PAGE_BORDER_MARGIN
+    page_spanning_ratio = PDFConfig.PAGE_SPANNING_RATIO
 
     border_lines = {
         'top': False,
@@ -1779,12 +1649,12 @@ def _detect_page_border_v3(page) -> PageBorderInfo:
     return result
 
 
-def _is_table_likely_border_v3(
+def _is_table_likely_border(
     table_bbox: Tuple[float, float, float, float],
     border_info: PageBorderInfo,
     page
 ) -> bool:
-    """테이블이 페이지 테두리인지 확인 (V3)"""
+    """테이블이 페이지 테두리인지 확인"""
     if not border_info.has_border or not border_info.border_bbox:
         return False
 
@@ -1801,10 +1671,10 @@ def _is_table_likely_border_v3(
 
 
 # ============================================================================
-# 텍스트 추출 (V3)
+# 텍스트 추출
 # ============================================================================
 
-def _extract_text_blocks_v3(
+def _extract_text_blocks(
     page,
     page_num: int,
     table_bboxes: List[Tuple[float, float, float, float]],
@@ -1812,7 +1682,7 @@ def _extract_text_blocks_v3(
     use_quality_check: bool = True
 ) -> List[PageElement]:
     """
-    테이블 영역을 제외한 텍스트 블록 추출 (V3)
+    테이블 영역을 제외한 텍스트 블록 추출
 
     개선 사항:
     1. 텍스트 품질 분석 (깨진 텍스트 감지)
@@ -1828,7 +1698,7 @@ def _extract_text_blocks_v3(
         # 품질이 너무 낮으면 전체 페이지 OCR 폴백
         if page_analysis.quality_result.needs_ocr:
             logger.info(
-                f"[PDF-V3] Page {page_num + 1}: Low text quality "
+                f"[PDF] Page {page_num + 1}: Low text quality "
                 f"({page_analysis.quality_result.quality_score:.2f}), "
                 f"PUA={page_analysis.quality_result.pua_count}, "
                 f"using OCR fallback"
@@ -1880,7 +1750,7 @@ def _extract_text_blocks_v3(
                     ocr_text = ocr_engine.ocr_region(block_bbox)
                     if ocr_text.strip():
                         full_text = ocr_text
-                        logger.debug(f"[PDF-V3] Block OCR: '{ocr_text[:50]}...'")
+                        logger.debug(f"[PDF] Block OCR: '{ocr_text[:50]}...'")
 
             elements.append(PageElement(
                 element_type=ElementType.TEXT,
@@ -1921,10 +1791,10 @@ def _split_ocr_text_to_blocks(
 
 
 # ============================================================================
-# 이미지 추출 (V3)
+# 이미지 추출
 # ============================================================================
 
-async def _extract_images_from_page_v3(
+async def _extract_images_from_page(
     page,
     page_num: int,
     doc,
@@ -1933,7 +1803,7 @@ async def _extract_images_from_page_v3(
     min_image_size: int = 50,
     min_image_area: int = 2500
 ) -> List[PageElement]:
-    """페이지에서 이미지 추출 및 로컬 저장 (V3)"""
+    """페이지에서 이미지 추출 및 로컬 저장"""
     elements = []
 
     try:
@@ -1979,21 +1849,21 @@ async def _extract_images_from_page_v3(
                     ))
 
             except Exception as e:
-                logger.debug(f"[PDF-V3] Error extracting image xref={xref}: {e}")
+                logger.debug(f"[PDF] Error extracting image xref={xref}: {e}")
                 continue
 
     except Exception as e:
-        logger.warning(f"[PDF-V3] Error extracting images: {e}")
+        logger.warning(f"[PDF] Error extracting images: {e}")
 
     return elements
 
 
 # ============================================================================
-# 요소 병합 (V3)
+# 요소 병합
 # ============================================================================
 
-def _merge_page_elements_v3(elements: List[PageElement]) -> str:
-    """페이지 요소들을 위치 기반으로 정렬하여 병합 (V3)"""
+def _merge_page_elements(elements: List[PageElement]) -> str:
+    """페이지 요소들을 위치 기반으로 정렬하여 병합"""
     if not elements:
         return ""
 
