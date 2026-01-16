@@ -722,17 +722,17 @@ def _process_page_full_ocr(
         logger.info(f"[PDF] Page {page_num + 1}: Found processable tables, "
                    f"using hybrid extraction instead of full OCR")
 
-        # 테이블을 페이지 요소로 추가
+        # Add tables as page elements
         table_bboxes = [elem.bbox for elem in page_tables]
         for table_element in page_tables:
             page_elements.append(table_element)
 
-        # 테이블 영역 외의 텍스트 추출
+        # Extract text outside table regions
         border_info = _detect_page_border(page)
         text_elements = _extract_text_blocks(page, page_num, table_bboxes, border_info)
         page_elements.extend(text_elements)
 
-        # 테이블 영역 외의 이미지 추출
+        # Extract images outside table regions
         image_elements = _extract_images_from_page(
             page, page_num, doc, processed_images, table_bboxes
         )
@@ -744,12 +744,12 @@ def _process_page_full_ocr(
 
         return _merge_page_elements(page_elements)
 
-    # Phase 3: 테이블 처리가 불가능하면 스마트 블록 처리
+    # Phase 3: If table processing not possible, use smart block processing
     block_engine = BlockImageEngine(page, page_num)
     multi_result: MultiBlockResult = block_engine.process_page_smart()
 
     if multi_result.success and multi_result.block_results:
-        # 블록별 이미지 태그를 페이지 요소로 변환
+        # Convert per-block image tags to page elements
         for block_result in multi_result.block_results:
             if block_result.success and block_result.image_tag:
                 page_elements.append(PageElement(
@@ -763,7 +763,7 @@ def _process_page_full_ocr(
                    f"strategy={multi_result.strategy_used.name}, "
                    f"blocks={multi_result.successful_blocks}/{multi_result.total_blocks}")
     else:
-        # 폴백: 전체 페이지 이미지화
+        # Fallback: full page imaging
         logger.warning(f"[PDF] Page {page_num + 1}: Smart processing failed, "
                       f"falling back to full page image")
 
@@ -778,7 +778,7 @@ def _process_page_full_ocr(
             ))
             logger.info(f"[PDF] Page {page_num + 1}: Full page image saved: {result.image_path}")
         else:
-            # 최후의 폴백: 텍스트 추출
+            # Last resort fallback: text extraction
             logger.warning(f"[PDF] Page {page_num + 1}: Full page image failed, "
                           f"falling back to text extraction")
             border_info = _detect_page_border(page)
@@ -800,7 +800,7 @@ def _process_page_full_ocr(
 
 
 def _bbox_overlaps(bbox1: Tuple, bbox2: Tuple) -> bool:
-    """두 bbox가 겹치는지 확인"""
+    """Check if two bboxes overlap."""
     return not (
         bbox1[2] <= bbox2[0] or
         bbox1[0] >= bbox2[2] or
@@ -810,43 +810,43 @@ def _bbox_overlaps(bbox1: Tuple, bbox2: Tuple) -> bool:
 
 
 # ============================================================================
-# 테이블 추출 함수
+# Table Extraction Functions
 # ============================================================================
 
 def _extract_all_tables(doc, file_path: str) -> Dict[int, List[PageElement]]:
     """
-    문서 전체에서 테이블을 추출합니다.
+    Extracts tables from entire document.
 
-    전략:
-    1. 다중 전략 테이블 감지
-    2. 신뢰도 기반 최선의 결과 선택
-    3. 셀 분석 및 병합셀 처리
-    4. 주석 통합
-    5. 페이지 간 연속성 처리
+    Strategy:
+    1. Multi-strategy table detection
+    2. Select best result based on confidence
+    3. Cell analysis and merge cell processing
+    4. Annotation integration
+    5. Cross-page continuity handling
     """
     tables_by_page: Dict[int, List[PageElement]] = {}
     all_table_infos: List[TableInfo] = []
 
-    # 1단계: 각 페이지에서 테이블 감지
+    # Step 1: Detect tables on each page
     for page_num in range(len(doc)):
         page = doc[page_num]
         page_height = page.rect.height
 
-        # 페이지 테두리 감지
+        # Detect page border
         border_info = _detect_page_border(page)
 
         try:
-            # 테이블 감지 엔진 사용
+            # Use table detection engine
             detection_engine = TableDetectionEngine(page, page_num, file_path)
             candidates = detection_engine.detect_tables()
 
             for idx, candidate in enumerate(candidates):
-                # 페이지 테두리와 겹치는지 확인
+                # Check if overlaps with page border
                 if border_info.has_border and _is_table_likely_border(candidate.bbox, border_info, page):
                     logger.debug(f"[PDF] Skipping page border table: {candidate.bbox}")
                     continue
 
-                # 셀 정보를 딕셔너리로 변환
+                # Convert cell info to dictionary
                 cells_info = None
                 if candidate.cells:
                     cells_info = [
@@ -879,17 +879,17 @@ def _extract_all_tables(doc, file_path: str) -> Dict[int, List[PageElement]]:
             logger.debug(f"[PDF] Error detecting tables on page {page_num}: {e}")
             continue
 
-    # 2단계: 인접 테이블 병합
+    # Step 2: Merge adjacent tables
     merged_tables = _merge_adjacent_tables(all_table_infos)
 
-    # 3단계: 주석 행 찾아서 삽입
+    # Step 3: Find and insert annotations
     merged_tables = _find_and_insert_annotations(doc, merged_tables)
 
-    # 4단계: 테이블 연속성 처리
+    # Step 4: Handle table continuity
     processed_tables = _process_table_continuity(merged_tables)
 
-    # 5단계: HTML 변환 및 PageElement 생성
-    # 1열 테이블은 TEXT로, 2열 이상은 TABLE로 처리
+    # Step 5: HTML conversion and PageElement creation
+    # Single-column tables as TEXT, 2+ columns as TABLE
     single_col_count = 0
     real_table_count = 0
 
@@ -900,9 +900,9 @@ def _extract_all_tables(doc, file_path: str) -> Dict[int, List[PageElement]]:
             if page_num not in tables_by_page:
                 tables_by_page[page_num] = []
 
-            # 1열 테이블인지 확인
+            # Check if single-column table
             if _is_single_column_table(table_info):
-                # 1열 테이블: 텍스트 리스트로 변환하여 TEXT 타입으로 처리
+                # Single-column table: convert to text list as TEXT type
                 text_content = _convert_single_column_to_text(table_info)
 
                 if text_content:
@@ -914,7 +914,7 @@ def _extract_all_tables(doc, file_path: str) -> Dict[int, List[PageElement]]:
                     ))
                     single_col_count += 1
             else:
-                # 2열 이상: HTML 테이블로 변환
+                # 2+ columns: convert to HTML table
                 html_table = _convert_table_to_html(table_info)
 
                 if html_table:
@@ -942,12 +942,12 @@ def _extract_all_tables(doc, file_path: str) -> Dict[int, List[PageElement]]:
 
 def _find_and_insert_annotations(doc, tables: List[TableInfo]) -> List[TableInfo]:
     """
-    테이블 내부 및 직후에 주석/각주/미주를 찾아서 통합합니다.
+    Finds and integrates annotations/footnotes/endnotes inside and after tables.
 
-    감지 패턴:
-    1. 테이블 직후 "주)" 등으로 시작하는 행
-    2. 테이블 내부의 서브헤더 행 (예: (A), (B))
-    3. 각주/미주 표시 (※, *, †, ‡ 등)
+    Detection patterns:
+    1. Rows starting with "Note)" etc. right after table
+    2. Subheader rows inside table (e.g., (A), (B))
+    3. Footnote/endnote markers (※, *, †, ‡, etc.)
     """
     if not tables:
         return tables
@@ -973,14 +973,14 @@ def _find_and_insert_annotations(doc, tables: List[TableInfo]) -> List[TableInfo
 
             next_table_top = sorted_tables[i + 1].bbox[1] if i + 1 < len(sorted_tables) else page_height
 
-            # 1. 테이블 직후 주석 행 찾기
+            # 1. Find annotation rows right after table
             annotation_lines = []
             for line in text_lines:
-                # 테이블 바로 아래, 다음 테이블 전
+                # Right below table, before next table
                 if table_bottom - 3 <= line['y0'] <= table_bottom + PDFConfig.ANNOTATION_Y_MARGIN:
                     if line['x0'] >= table_left - 10 and line['x1'] <= table_right + 10:
                         if line['y0'] < next_table_top - 20:
-                            # 주석 패턴 확인
+                            # Check annotation pattern
                             for pattern in PDFConfig.ANNOTATION_PATTERNS:
                                 if line['text'].startswith(pattern):
                                     annotation_lines.append(line)
@@ -990,10 +990,10 @@ def _find_and_insert_annotations(doc, tables: List[TableInfo]) -> List[TableInfo
                 table = _add_annotation_to_table(table, annotation_lines, 'footer')
                 logger.debug(f"[PDF] Added annotation to table on page {page_num + 1}")
 
-            # 2. 서브헤더 행 찾기 (예: (A), (B)) - 이미 서브헤더가 없을 때만
+            # 2. Find subheader rows (e.g., (A), (B)) - only when no subheader exists
             has_subheader = False
             if table.row_count >= 2 and table.data and len(table.data) >= 2:
-                # 두 번째 행이 서브헤더 패턴인지 확인
+                # Check if second row is subheader pattern
                 second_row = table.data[1] if len(table.data) > 1 else []
                 for cell in second_row:
                     if cell and ('(A)' in str(cell) or '(B)' in str(cell)):
@@ -1009,7 +1009,7 @@ def _find_and_insert_annotations(doc, tables: List[TableInfo]) -> List[TableInfo
                 for line in text_lines:
                     if header_bottom_estimate - 5 <= line['y0'] <= second_row_top_estimate - 5:
                         if line['x0'] >= table_left - 10 and line['x1'] <= table_right + 10:
-                            # (A), (B) 패턴 확인
+                            # Check (A), (B) pattern
                             if '(A)' in line['text'] or '(B)' in line['text']:
                                 subheader_lines.append(line)
 
@@ -1024,7 +1024,7 @@ def _find_and_insert_annotations(doc, tables: List[TableInfo]) -> List[TableInfo
 
 
 def _add_annotation_to_table(table: TableInfo, text_lines: List[Dict], position: str) -> TableInfo:
-    """주석 행을 테이블에 추가"""
+    """Adds annotation rows to a table."""
     if not text_lines:
         return table
 
@@ -1052,7 +1052,7 @@ def _add_annotation_to_table(table: TableInfo, text_lines: List[Dict], position:
 
     new_data = list(table.data)
 
-    # 셀 정보 업데이트
+    # Update cell info
     new_cells_info = None
     if table.cells_info:
         new_cells_info = list(table.cells_info)
@@ -1062,7 +1062,7 @@ def _add_annotation_to_table(table: TableInfo, text_lines: List[Dict], position:
     if position == 'subheader':
         if len(new_data) > 0:
             new_data.insert(1, new_row)
-            # 기존 셀 정보의 row 인덱스 조정 (row >= 1인 경우 +1)
+            # Adjust existing cell info row indices (+1 for row >= 1)
             adjusted_cells = []
             for cell in new_cells_info:
                 if cell['row'] >= 1:
@@ -1072,7 +1072,7 @@ def _add_annotation_to_table(table: TableInfo, text_lines: List[Dict], position:
                 else:
                     adjusted_cells.append(cell)
             new_cells_info = adjusted_cells
-            # 새 서브헤더 행에 대한 셀 정보 추가 (각 셀은 colspan=1)
+            # Add cell info for new subheader row (each cell has colspan=1)
             for col_idx in range(table.col_count):
                 new_cells_info.append({
                     'row': 1,
@@ -1085,7 +1085,7 @@ def _add_annotation_to_table(table: TableInfo, text_lines: List[Dict], position:
             new_data.append(new_row)
     else:
         new_data.append(new_row)
-        # footer 행에 대한 셀 정보는 _generate_html_from_cells에서 처리됨
+        # Footer row cell info is handled in _generate_html_from_cells
 
     all_y = [line['y0'] for line in text_lines] + [line['y1'] for line in text_lines]
     min_y = min(all_y)
@@ -1119,41 +1119,41 @@ def _add_annotation_to_table(table: TableInfo, text_lines: List[Dict], position:
 
 def _is_single_column_table(table_info: TableInfo) -> bool:
     """
-    테이블이 n rows × 1 column 형태인지 판단합니다.
+    Determines if a table has n rows × 1 column format.
 
-    n rows × 1 column 테이블은 실제 테이블이 아닌 경우가 많으므로
-    텍스트 리스트로 변환하는 것이 더 적합합니다.
+    Tables with n rows × 1 column are often not actual tables,
+    so converting them to a text list is more appropriate.
 
     Args:
-        table_info: 테이블 정보
+        table_info: Table information
 
     Returns:
-        True if 1열 테이블, False otherwise
+        True if single-column table, False otherwise
     """
     data = table_info.data
 
     if not data:
         return False
 
-    # 모든 행의 최대 열 수 계산
+    # Calculate max columns across all rows
     max_cols = max(len(row) for row in data) if data else 0
 
-    # 1열이면 단일 열 테이블
+    # Single column if max_cols is 1
     return max_cols == 1
 
 
 def _convert_single_column_to_text(table_info: TableInfo) -> str:
     """
-    1열 테이블을 텍스트 리스트로 변환합니다.
+    Converts a single-column table to a text list.
 
-    n rows × 1 column 형태의 데이터는 테이블보다
-    구조화된 텍스트로 표현하는 것이 더 의미론적으로 적합합니다.
+    Data with n rows × 1 column format is semantically more
+    appropriate to express as structured text rather than a table.
 
     Args:
-        table_info: 테이블 정보
+        table_info: Table information
 
     Returns:
-        텍스트 리스트 형식의 문자열
+        String in text list format
     """
     data = table_info.data
 
@@ -1172,14 +1172,14 @@ def _convert_single_column_to_text(table_info: TableInfo) -> str:
 
 def _convert_table_to_html(table_info: TableInfo) -> str:
     """
-    테이블을 HTML로 변환.
+    Converts a table to HTML.
 
-    개선사항:
-    1. PyMuPDF 셀 정보 우선 사용
-    2. CellAnalysisEngine 적용
-    3. 정확한 rowspan/colspan 처리
-    4. 주석 행 전체 colspan 처리
-    5. 접근성 고려한 시맨틱 HTML
+    Improvements:
+    1. Prioritize using PyMuPDF cell info
+    2. Apply CellAnalysisEngine
+    3. Accurate rowspan/colspan handling
+    4. Full colspan for annotation rows
+    5. Semantic HTML with accessibility considerations
     """
     data = table_info.data
 
@@ -1192,12 +1192,13 @@ def _convert_table_to_html(table_info: TableInfo) -> str:
     if num_cols == 0:
         return ""
 
-    # CellAnalysisEngine을 사용하여 셀 분석 수행
+    # Perform cell analysis using CellAnalysisEngine
     cell_engine = CellAnalysisEngine(table_info, None)
     analyzed_cells = cell_engine.analyze()
 
-    # 분석된 셀 정보로 HTML 생성
-    return _generate_html_from_cells_v2(data, analyzed_cells, num_rows, num_cols)
+    # Generate HTML from analyzed cell info
+    return _generate_html_from_cells(data, analyzed_cells, num_rows, num_cols)
+
 
 
 def _generate_html_from_cells(
@@ -1206,25 +1207,15 @@ def _generate_html_from_cells(
     num_rows: int,
     num_cols: int
 ) -> str:
-    """분석된 셀 정보를 사용하여 HTML 생성 (호환성 유지)"""
-    return _generate_html_from_cells_v2(data, cells_info, num_rows, num_cols)
-
-
-def _generate_html_from_cells_v2(
-    data: List[List[Optional[str]]],
-    cells_info: List[Dict],
-    num_rows: int,
-    num_cols: int
-) -> str:
     """
-    개선된 HTML 생성
+    Improved HTML generation.
 
-    개선사항:
-    - 셀 정보가 불완전해도 모든 셀 처리
-    - 빈 셀을 올바르게 렌더링
-    - 데이터 범위 검증 강화
+    Improvements:
+    - Process all cells even with incomplete cell info
+    - Render empty cells correctly
+    - Enhanced data range validation
     """
-    # span_map 생성: (row, col) -> {rowspan, colspan}
+    # Create span_map: (row, col) -> {rowspan, colspan}
     span_map: Dict[Tuple[int, int], Dict] = {}
 
     for cell in cells_info:
@@ -1233,7 +1224,7 @@ def _generate_html_from_cells_v2(
         rowspan = max(1, cell.get('rowspan', 1))
         colspan = max(1, cell.get('colspan', 1))
 
-        # 데이터 범위 내로 조정
+        # Adjust to stay within data range
         if row >= num_rows or col >= num_cols:
             continue
 
@@ -1246,7 +1237,7 @@ def _generate_html_from_cells_v2(
             'colspan': colspan
         }
 
-    # skip_set 생성: 병합셀에 의해 커버되는 위치
+    # Create skip_set: positions covered by merged cells
     skip_set: Set[Tuple[int, int]] = set()
 
     for (row, col), spans in span_map.items():
@@ -1258,7 +1249,7 @@ def _generate_html_from_cells_v2(
                 if (r, c) != (row, col):
                     skip_set.add((r, c))
 
-    # 주석 행 감지 및 전체 colspan 처리
+    # Detect annotation rows and apply full colspan
     for row_idx, row in enumerate(data):
         if not row:
             continue
@@ -1271,12 +1262,12 @@ def _generate_html_from_cells_v2(
                 break
 
         if is_annotation:
-            # 주석 행은 전체 colspan
+            # Annotation row gets full colspan
             span_map[(row_idx, 0)] = {'rowspan': 1, 'colspan': num_cols}
             for col_idx in range(1, num_cols):
                 skip_set.add((row_idx, col_idx))
 
-    # HTML 생성
+    # Generate HTML
     html_parts = ["<table>"]
 
     for row_idx in range(num_rows):
@@ -1285,17 +1276,17 @@ def _generate_html_from_cells_v2(
         row_data = data[row_idx] if row_idx < len(data) else []
 
         for col_idx in range(num_cols):
-            # 스킵해야 하는 셀인지 확인
+            # Check if this cell should be skipped
             if (row_idx, col_idx) in skip_set:
                 continue
 
-            # 셀 내용 추출
+            # Extract cell content
             content = ""
             if col_idx < len(row_data):
                 content = row_data[col_idx]
             content = escape_html(str(content).strip() if content else "")
 
-            # span 정보 가져오기 (없으면 기본값 1)
+            # Get span info (default to 1 if not found)
             spans = span_map.get((row_idx, col_idx), {'rowspan': 1, 'colspan': 1})
             attrs = []
 
@@ -1306,7 +1297,7 @@ def _generate_html_from_cells_v2(
 
             attr_str = " " + " ".join(attrs) if attrs else ""
 
-            # 첫 행은 헤더로 처리
+            # First row is treated as header
             tag = "th" if row_idx == 0 else "td"
             html_parts.append(f"    <{tag}{attr_str}>{content}</{tag}>")
 
@@ -1317,11 +1308,11 @@ def _generate_html_from_cells_v2(
 
 
 # ============================================================================
-# 테이블 병합 및 연속성 처리
+# Table Merging and Continuity Processing
 # ============================================================================
 
 def _merge_adjacent_tables(tables: List[TableInfo]) -> List[TableInfo]:
-    """인접 테이블 병합"""
+    """Merge adjacent tables."""
     if not tables:
         return tables
 
@@ -1357,7 +1348,7 @@ def _merge_adjacent_tables(tables: List[TableInfo]) -> List[TableInfo]:
 
 
 def _should_merge_tables(t1: TableInfo, t2: TableInfo) -> bool:
-    """두 테이블 병합 여부 판단"""
+    """Determine whether two tables should be merged."""
     if t1.page_num != t2.page_num:
         return False
 
@@ -1386,11 +1377,11 @@ def _should_merge_tables(t1: TableInfo, t2: TableInfo) -> bool:
 
 def _do_merge_tables(t1: TableInfo, t2: TableInfo) -> TableInfo:
     """
-    두 테이블 병합 수행
+    Perform table merging.
 
-    개선:
-    - cells_info가 없어도 기본 셀 정보 유지
-    - 병합 후 셀 인덱스 정확하게 조정
+    Improvements:
+    - Maintain basic cell info even without cells_info
+    - Accurately adjust cell indices after merging
     """
     merged_bbox = (
         min(t1.bbox[0], t2.bbox[0]),
@@ -1404,11 +1395,11 @@ def _do_merge_tables(t1: TableInfo, t2: TableInfo) -> TableInfo:
     merged_data = []
     merged_cells = []
 
-    # t1 데이터 처리
+    # Process t1 data
     t1_row_count = len(t1.data)
 
     if t1.col_count < merged_col_count and t1.row_count == 1 and t1.data:
-        # 헤더 행이 적은 열을 가진 경우 colspan 처리
+        # Handle colspan when header row has fewer columns
         extra_cols = merged_col_count - t1.col_count
         header_row = list(t1.data[0])
 
@@ -1442,7 +1433,7 @@ def _do_merge_tables(t1: TableInfo, t2: TableInfo) -> TableInfo:
 
         merged_data.append(new_header)
     else:
-        # 일반 행 처리
+        # Process regular rows
         for row_idx, row in enumerate(t1.data):
             if len(row) < merged_col_count:
                 adjusted_row = list(row) + [''] * (merged_col_count - len(row))
@@ -1450,11 +1441,11 @@ def _do_merge_tables(t1: TableInfo, t2: TableInfo) -> TableInfo:
                 adjusted_row = list(row)
             merged_data.append(adjusted_row)
 
-        # t1의 셀 정보 복사
+        # Copy t1 cell info
         if t1.cells_info:
             merged_cells.extend(t1.cells_info)
 
-    # t2 데이터 처리
+    # Process t2 data
     row_offset = t1_row_count
 
     for row in t2.data:
@@ -1464,14 +1455,14 @@ def _do_merge_tables(t1: TableInfo, t2: TableInfo) -> TableInfo:
             adjusted_row = list(row)
         merged_data.append(adjusted_row)
 
-    # t2의 셀 정보 복사 (row offset 적용)
+    # Copy t2 cell info (with row offset applied)
     if t2.cells_info:
         for cell in t2.cells_info:
             adjusted_cell = dict(cell)
             adjusted_cell['row'] = cell.get('row', 0) + row_offset
             merged_cells.append(adjusted_cell)
 
-    # 셀 정보가 비어있으면 None으로 (CellAnalysisEngine에서 처리)
+    # If cell info is empty, set to None (handled by CellAnalysisEngine)
     final_cells_info = merged_cells if merged_cells else None
 
     return TableInfo(
@@ -1489,7 +1480,7 @@ def _do_merge_tables(t1: TableInfo, t2: TableInfo) -> TableInfo:
 
 
 def _process_table_continuity(all_tables: List[TableInfo]) -> List[TableInfo]:
-    """페이지 간 테이블 연속성 처리"""
+    """Handle table continuity across pages."""
     if not all_tables:
         return all_tables
 
@@ -1548,7 +1539,7 @@ def _process_table_continuity(all_tables: List[TableInfo]) -> List[TableInfo]:
 
 
 def _extract_last_category(table_data: List[List[Optional[str]]]) -> Optional[str]:
-    """테이블에서 마지막 카테고리 추출"""
+    """Extract last category from table."""
     if not table_data:
         return None
 
@@ -1562,17 +1553,17 @@ def _extract_last_category(table_data: List[List[Optional[str]]]) -> Optional[st
 
 
 # ============================================================================
-# 페이지 테두리 감지
+# Page Border Detection
 # ============================================================================
 
 def _detect_page_border(page) -> PageBorderInfo:
     """
-    페이지 테두리(장식용)를 감지합니다.
+    Detects page borders (decorative).
 
-    개선점:
-    1. 얇은 선도 감지
-    2. 이중선 처리
-    3. 더 정확한 테두리 판별
+    Improvements:
+    1. Detect thin lines as well
+    2. Handle double lines
+    3. More accurate border identification
     """
     result = PageBorderInfo()
 
@@ -1601,22 +1592,22 @@ def _detect_page_border(page) -> PageBorderInfo:
         w = rect.width
         h = rect.height
 
-        # 얇은 선도 감지 (두께 제한 완화)
-        # 가로선 (높이가 작고 너비가 큼)
+        # Detect thin lines as well (relaxed thickness limit)
+        # Horizontal line (small height, large width)
         if h <= 10 and w > page_width * page_spanning_ratio:
             if rect.y0 < edge_margin:
                 border_lines['top'] = True
             elif rect.y1 > page_height - edge_margin:
                 border_lines['bottom'] = True
 
-        # 세로선 (너비가 작고 높이가 큼)
+        # Vertical line (small width, large height)
         if w <= 10 and h > page_height * page_spanning_ratio:
             if rect.x0 < edge_margin:
                 border_lines['left'] = True
             elif rect.x1 > page_width - edge_margin:
                 border_lines['right'] = True
 
-    # 4면 모두 있으면 페이지 테두리
+    # If all 4 sides present, it's a page border
     if all(border_lines.values()):
         result.has_border = True
         result.border_bbox = (edge_margin, edge_margin, page_width - edge_margin, page_height - edge_margin)
@@ -1630,7 +1621,7 @@ def _is_table_likely_border(
     border_info: PageBorderInfo,
     page
 ) -> bool:
-    """테이블이 페이지 테두리인지 확인"""
+    """Check if a table is likely a page border."""
     if not border_info.has_border or not border_info.border_bbox:
         return False
 
@@ -1647,7 +1638,7 @@ def _is_table_likely_border(
 
 
 # ============================================================================
-# 텍스트 추출
+# Text Extraction
 # ============================================================================
 
 def _extract_text_blocks(
@@ -1658,20 +1649,20 @@ def _extract_text_blocks(
     use_quality_check: bool = True
 ) -> List[PageElement]:
     """
-    테이블 영역을 제외한 텍스트 블록 추출
+    Extract text blocks excluding table regions.
 
-    개선 사항:
-    1. 텍스트 품질 분석 (깨진 텍스트 감지)
-    2. 품질이 낮은 경우 OCR 폴백
+    Improvements:
+    1. Text quality analysis (broken text detection)
+    2. OCR fallback for low quality text
     """
     elements = []
 
-    # 텍스트 품질 분석
+    # Analyze text quality
     if use_quality_check:
         analyzer = TextQualityAnalyzer(page, page_num)
         page_analysis = analyzer.analyze_page()
 
-        # 품질이 너무 낮으면 전체 페이지 OCR 폴백
+        # If quality is too low, use full page OCR fallback
         if page_analysis.quality_result.needs_ocr:
             logger.info(
                 f"[PDF] Page {page_num + 1}: Low text quality "
@@ -1684,12 +1675,12 @@ def _extract_text_blocks(
             ocr_text, _ = extractor.extract()
 
             if ocr_text.strip():
-                # OCR 텍스트를 블록별로 분리하여 반환
-                # 테이블 영역 제외
+                # Split OCR text into blocks
+                # Exclude table regions
                 ocr_blocks = _split_ocr_text_to_blocks(ocr_text, page, table_bboxes)
                 return ocr_blocks
 
-    # 기존 로직: 일반 텍스트 추출
+    # Existing logic: regular text extraction
     page_dict = page.get_text("dict", sort=True)
 
     for block in page_dict.get("blocks", []):
@@ -1714,13 +1705,13 @@ def _extract_text_blocks(
         if text_parts:
             full_text = "\n".join(text_parts)
 
-            # 개별 블록 품질 체크 (use_quality_check가 True인 경우)
+            # Individual block quality check (when use_quality_check is True)
             if use_quality_check:
                 analyzer = TextQualityAnalyzer(page, page_num)
                 block_quality = analyzer.analyze_text(full_text)
 
                 if block_quality.needs_ocr:
-                    # 해당 블록만 OCR
+                    # OCR only this block
                     from libs.core.processor.pdf_helpers.text_quality_analyzer import PageOCRFallbackEngine
                     ocr_engine = PageOCRFallbackEngine(page, page_num)
                     ocr_text = ocr_engine.ocr_region(block_bbox)
@@ -1744,20 +1735,20 @@ def _split_ocr_text_to_blocks(
     table_bboxes: List[Tuple[float, float, float, float]]
 ) -> List[PageElement]:
     """
-    OCR 텍스트를 페이지 요소로 변환
+    Convert OCR text to page elements.
 
-    OCR은 위치 정보가 없으므로, 전체 텍스트를 하나의 블록으로 처리합니다.
-    테이블 영역은 제외됩니다.
+    Since OCR lacks position info, the entire text is treated as a single block.
+    Table regions are excluded.
     """
     if not ocr_text.strip():
         return []
 
-    # 테이블 영역을 제외한 페이지 영역 계산
+    # Calculate page region excluding table areas
     page_width = page.rect.width
     page_height = page.rect.height
 
-    # OCR 텍스트를 단일 블록으로 반환 (위치는 페이지 전체)
-    # 실제 위치 정보가 필요하면 pytesseract의 image_to_data 사용 가능
+    # Return OCR text as a single block (position covers entire page)
+    # For actual position info, pytesseract's image_to_data can be used
     return [PageElement(
         element_type=ElementType.TEXT,
         content=ocr_text,
@@ -1767,7 +1758,7 @@ def _split_ocr_text_to_blocks(
 
 
 # ============================================================================
-# 이미지 추출
+# Image Extraction
 # ============================================================================
 
 def _extract_images_from_page(
@@ -1779,7 +1770,7 @@ def _extract_images_from_page(
     min_image_size: int = 50,
     min_image_area: int = 2500
 ) -> List[PageElement]:
-    """페이지에서 이미지 추출 및 로컬 저장"""
+    """Extract images from page and save locally."""
     elements = []
 
     try:
@@ -1835,11 +1826,11 @@ def _extract_images_from_page(
 
 
 # ============================================================================
-# 요소 병합
+# Element Merging
 # ============================================================================
 
 def _merge_page_elements(elements: List[PageElement]) -> str:
-    """페이지 요소들을 위치 기반으로 정렬하여 병합"""
+    """Merge page elements sorted by position."""
     if not elements:
         return ""
 
