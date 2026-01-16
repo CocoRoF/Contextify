@@ -15,11 +15,11 @@ from libs.core.processor.pdf_helpers.pdf_helper import (
     get_text_lines_with_positions,
 )
 
-from libs.core.processor.pdf_helpers.v3_types import (
+from libs.core.processor.pdf_helpers.types import (
     LineThickness,
     TableDetectionStrategy,
     ElementType,
-    V3Config,
+    PDFConfig,
     LineInfo,
     GridInfo,
     CellInfo,
@@ -56,7 +56,6 @@ from libs.core.processor.pdf_helpers.cell_analysis import (
     CellAnalysisEngine,
 )
 
-# V4 신규 모듈
 from libs.core.processor.pdf_helpers.complexity_analyzer import (
     ComplexityLevel,
     ProcessingStrategy,
@@ -84,7 +83,6 @@ from libs.core.processor.pdf_helpers.layout_block_detector import (
     LayoutBlockDetector,
 )
 
-# V4 테이블 품질 분석 모듈
 from libs.core.processor.pdf_helpers.table_quality_analyzer import (
     TableQuality,
     TableQualityResult,
@@ -101,11 +99,11 @@ __all__ = [
     'bboxes_overlap',
     'find_image_position',
     'get_text_lines_with_positions',
-    # v3_types
+    # types
     'LineThickness',
     'TableDetectionStrategy',
     'ElementType',
-    'V3Config',
+    'PDFConfig',
     'LineInfo',
     'GridInfo',
     'CellInfo',
@@ -128,20 +126,20 @@ __all__ = [
     'TableDetectionEngine',
     # cell_analysis
     'CellAnalysisEngine',
-    # V4: complexity_analyzer
+    # complexity_analyzer
     'ComplexityLevel',
     'ProcessingStrategy',
     'RegionComplexity',
     'PageComplexity',
     'ComplexityConfig',
     'ComplexityAnalyzer',
-    # V4: block_image_engine
+    # block_image_engine
     'BlockStrategy',
     'BlockImageConfig',
     'BlockImageResult',
     'MultiBlockResult',
     'BlockImageEngine',
-    # V4: layout_block_detector
+    # layout_block_detector
     'LayoutBlockType',
     'ContentElement',
     'LayoutBlock',
@@ -149,7 +147,7 @@ __all__ = [
     'LayoutAnalysisResult',
     'LayoutDetectorConfig',
     'LayoutBlockDetector',
-    # V4: table_quality_analyzer
+    # table_quality_analyzer
     'TableQuality',
     'TableQualityResult',
     'TableQualityAnalyzer',

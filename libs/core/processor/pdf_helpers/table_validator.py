@@ -1,5 +1,5 @@
 """
-Table Quality Validator for PDF Handler V3
+Table Quality Validator for PDF Handler
 
 감지된 테이블 후보가 실제 테이블인지 검증합니다.
 그래픽 영역이 테이블로 오인되는 것을 방지합니다.
@@ -8,7 +8,7 @@ Table Quality Validator for PDF Handler V3
 import logging
 from typing import List, Tuple, Optional
 
-from libs.core.processor.pdf_helpers.v3_types import V3Config
+from libs.core.processor.pdf_helpers.types import PDFConfig
 from libs.core.processor.pdf_helpers.graphic_detector import GraphicRegionDetector
 
 logger = logging.getLogger(__name__)
@@ -31,8 +31,8 @@ class TableQualityValidator:
     4. 데이터 유효성 (의미 있는 텍스트)
     5. 그리드 규칙성
     6. 긴 텍스트 셀 감지 (텍스트 블록이 테이블로 오인된 경우)
-    7. V3.2: 문단 텍스트 감지 (본문 텍스트가 테이블로 오인된 경우)
-    8. V3.2: 2열 테이블 특별 검증 (본문이 테이블로 오인되기 쉬움)
+    7. 문단 텍스트 감지 (본문 텍스트가 테이블로 오인된 경우)
+    8. 2열 테이블 특별 검증 (본문이 테이블로 오인되기 쉬움)
     """
     
     def __init__(self, page, graphic_detector: Optional[GraphicRegionDetector] = None):
@@ -54,8 +54,7 @@ class TableQualityValidator:
         """
         테이블 후보를 검증합니다.
         
-        V3.3 개선:
-        - 패널티 누적 완화
+                - 패널티 누적 완화
         - 일반 테이블 필터링 방지
         - PyMuPDF 결과 신뢰도 강화
         
@@ -63,7 +62,7 @@ class TableQualityValidator:
             data: 테이블 데이터 (2D 리스트)
             bbox: 테이블 영역
             cells_info: 셀 정보 (선택)
-            skip_graphic_check: 그래픽 영역 체크 건너뛰기 (V3.2)
+            skip_graphic_check: 그래픽 영역 체크 건너뛰기 
                                 PyMuPDF 전략은 텍스트 기반이므로 신뢰도가 높음
             
         Returns:
@@ -74,11 +73,11 @@ class TableQualityValidator:
         is_valid = True
         confidence = 1.0
         
-        # V3.3: PyMuPDF가 셀 정보를 제공했으면 기본 신뢰도 상향
+        # PyMuPDF가 셀 정보를 제공했으면 기본 신뢰도 상향
         if cells_info and len(cells_info) > 0:
             confidence = 1.1  # 약간의 보너스
         
-        # 0. 그래픽 영역 체크 (V3.2: skip_graphic_check 옵션 추가)
+        # 0. 그래픽 영역 체크 (skip_graphic_check 옵션 추가)
         if not skip_graphic_check:
             if self.graphic_detector and self.graphic_detector.is_bbox_in_graphic_region(bbox, threshold=0.5):
                 return False, 0.0, "in_graphic_region"
@@ -90,10 +89,10 @@ class TableQualityValidator:
         num_rows = len(data)
         num_cols = max(len(row) for row in data) if data else 0
         
-        if num_rows < V3Config.MIN_TABLE_ROWS:
+        if num_rows < PDFConfig.MIN_TABLE_ROWS:
             return False, 0.0, f"too_few_rows({num_rows})"
         
-        if num_cols < V3Config.MIN_TABLE_COLS:
+        if num_cols < PDFConfig.MIN_TABLE_COLS:
             return False, 0.0, f"too_few_cols({num_cols})"
         
         # 2. 채워진 셀 비율 검증
@@ -102,8 +101,8 @@ class TableQualityValidator:
                           if cell and str(cell).strip())
         filled_ratio = filled_cells / total_cells if total_cells > 0 else 0
         
-        # V3.3: 채워진 비율에 따른 점진적 패널티
-        if filled_ratio < V3Config.TABLE_MIN_FILLED_CELL_RATIO:
+        # 채워진 비율에 따른 점진적 패널티
+        if filled_ratio < PDFConfig.TABLE_MIN_FILLED_CELL_RATIO:
             if filled_ratio < 0.05:
                 penalties.append(f"very_low_fill_ratio({filled_ratio:.2f})")
                 confidence -= 0.3
@@ -116,26 +115,26 @@ class TableQualityValidator:
                         if not any(cell and str(cell).strip() for cell in row))
         empty_row_ratio = empty_rows / num_rows if num_rows > 0 else 1.0
         
-        if empty_row_ratio >= V3Config.TABLE_MAX_EMPTY_ROW_RATIO:
+        if empty_row_ratio >= PDFConfig.TABLE_MAX_EMPTY_ROW_RATIO:
             penalties.append(f"too_many_empty_rows({empty_row_ratio:.2f})")
             confidence -= 0.15
         
         # 4. 의미 있는 셀 수 검증
         meaningful_cells = self._count_meaningful_cells(data)
-        if meaningful_cells < V3Config.TABLE_MIN_MEANINGFUL_CELLS:
+        if meaningful_cells < PDFConfig.TABLE_MIN_MEANINGFUL_CELLS:
             penalties.append(f"few_meaningful_cells({meaningful_cells})")
             confidence -= 0.15
         
         # 5. 유효 행 수 검증 (빈 행이 아닌 행)
         valid_rows = sum(1 for row in data 
                         if any(cell and str(cell).strip() for cell in row))
-        if valid_rows < V3Config.TABLE_MIN_VALID_ROWS:
+        if valid_rows < PDFConfig.TABLE_MIN_VALID_ROWS:
             penalties.append(f"few_valid_rows({valid_rows})")
             confidence -= 0.15
         
         # 6. 텍스트 밀도 검증
         text_density = self._calculate_text_density(data, bbox)
-        if text_density < V3Config.TABLE_MIN_TEXT_DENSITY:
+        if text_density < PDFConfig.TABLE_MIN_TEXT_DENSITY:
             penalties.append(f"low_text_density({text_density:.3f})")
             confidence -= 0.1
         
@@ -151,39 +150,39 @@ class TableQualityValidator:
             penalties.append(f"abnormal_ratio(cols/rows={num_cols}/{num_rows})")
             confidence -= 0.1
         
-        # 9. V3.1: 긴 텍스트 셀 감지 (텍스트 블록이 테이블로 오인된 경우)
+        # 9. 긴 텍스트 셀 감지 (텍스트 블록이 테이블로 오인된 경우)
         long_cell_count, extreme_cell_count = self._analyze_cell_lengths(data)
         
         # 극단적으로 긴 셀이 있으면 즉시 실패
         if extreme_cell_count > 0:
             return False, 0.0, f"extreme_long_cell({extreme_cell_count})"
         
-        # 긴 텍스트 셀 비율 검사 (V3.3: 더 관대함)
+        # 긴 텍스트 셀 비율 검사 (더 관대함)
         if filled_cells > 0:
             long_cell_ratio = long_cell_count / filled_cells
-            if long_cell_ratio > V3Config.TABLE_MAX_LONG_CELLS_RATIO:
+            if long_cell_ratio > PDFConfig.TABLE_MAX_LONG_CELLS_RATIO:
                 penalties.append(f"too_many_long_cells({long_cell_ratio:.2f})")
                 confidence -= 0.2
         
-        # 10. V3.2: 문단 텍스트 감지 (본문 텍스트가 테이블로 오인된 경우)
+        # 10. 문단 텍스트 감지 (본문 텍스트가 테이블로 오인된 경우)
         paragraph_count = self._count_paragraph_cells(data)
         if paragraph_count > 0:
             # 문단 형태의 텍스트가 있으면 테이블이 아닐 가능성 높음
             paragraph_ratio = paragraph_count / max(1, filled_cells)
-            if paragraph_ratio > 0.25:  # V3.3: 15% → 25%로 완화
+            if paragraph_ratio > 0.25:  # 15% → 25%로 완화
                 return False, 0.0, f"contains_paragraph_text({paragraph_count})"
-            elif paragraph_ratio > 0.1:  # V3.3: 5% → 10%로 완화
+            elif paragraph_ratio > 0.1:  # 5% → 10%로 완화
                 penalties.append(f"has_paragraph_cells({paragraph_count})")
                 confidence -= 0.15
         
-        # 11. V3.2: 2열 테이블 특별 검증 (본문이 테이블로 오인되기 쉬움)
+        # 11. 2열 테이블 특별 검증 (본문이 테이블로 오인되기 쉬움)
         if num_cols == 2:
             is_valid_2col, reason_2col = self._validate_two_column_table(data, bbox)
             if not is_valid_2col:
                 return False, 0.0, f"invalid_2col_table({reason_2col})"
         
-        # 12. V3.2: 테이블 bbox가 페이지의 큰 부분을 차지하면서 행이 많으면 의심
-        # V3.3: 더 관대한 조건
+        # 12. 테이블 bbox가 페이지의 큰 부분을 차지하면서 행이 많으면 의심
+        # 더 관대한 조건
         bbox_height = bbox[3] - bbox[1]
         page_coverage = bbox_height / self.page_height if self.page_height > 0 else 0
         if page_coverage > 0.7 and num_rows > 15 and num_cols == 2:  # 조건 완화
@@ -192,10 +191,10 @@ class TableQualityValidator:
             confidence -= 0.15
         
         # 최종 판단
-        # V3.3: 신뢰도 하한선 조정 (0.4로 낮춤)
+        # 신뢰도 하한선 조정 (0.4로 낮춤)
         confidence = max(0.0, min(1.0, confidence))
         
-        # V3.3: CONFIDENCE_THRESHOLD 대신 더 낮은 임계값 사용
+        # CONFIDENCE_THRESHOLD 대신 더 낮은 임계값 사용
         min_threshold = 0.35  # 기존 0.5에서 낮춤
         if confidence < min_threshold:
             is_valid = False
@@ -209,7 +208,7 @@ class TableQualityValidator:
     
     def _analyze_cell_lengths(self, data: List[List[Optional[str]]]) -> Tuple[int, int]:
         """
-        V3.1: 셀 텍스트 길이를 분석합니다.
+        셀 텍스트 길이를 분석합니다.
         
         Returns:
             (long_cell_count, extreme_cell_count) 튜플
@@ -225,10 +224,10 @@ class TableQualityValidator:
                     text = str(cell).strip()
                     text_len = len(text)
                     
-                    if text_len > V3Config.TABLE_EXTREME_CELL_LENGTH:
+                    if text_len > PDFConfig.TABLE_EXTREME_CELL_LENGTH:
                         extreme_count += 1
                         long_count += 1  # 극단적으로 긴 것도 긴 셀에 포함
-                    elif text_len > V3Config.TABLE_MAX_CELL_TEXT_LENGTH:
+                    elif text_len > PDFConfig.TABLE_MAX_CELL_TEXT_LENGTH:
                         long_count += 1
         
         return long_count, extreme_count
@@ -281,7 +280,7 @@ class TableQualityValidator:
 
     def _count_paragraph_cells(self, data: List[List[Optional[str]]]) -> int:
         """
-        V3.2: 문단 형태의 텍스트를 포함하는 셀 수를 계산합니다.
+        문단 형태의 텍스트를 포함하는 셀 수를 계산합니다.
         
         문단 판단 기준:
         - 50자 이상의 텍스트
@@ -334,7 +333,7 @@ class TableQualityValidator:
     def _validate_two_column_table(self, data: List[List[Optional[str]]], 
                                     bbox: Tuple[float, float, float, float]) -> Tuple[bool, str]:
         """
-        V3.2: 2열 테이블의 유효성을 검증합니다.
+        2열 테이블의 유효성을 검증합니다.
         
         2열 테이블은 본문 텍스트가 테이블로 오인되기 쉽습니다.
         예: 차트의 Y축 레이블 + 본문이 2열 테이블로 감지될 수 있음

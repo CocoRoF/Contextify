@@ -1,9 +1,9 @@
 """
-Table Detection Engine for PDF Handler V3
+Table Detection Engine for PDF Handler
 
 다중 전략을 사용하여 테이블을 감지하고 최선의 결과를 선택합니다.
-V3.1 고도화로 그래픽 영역 제외 및 가짜 테이블 필터링 기능 포함.
-V3.3 셀 추출 정확도 개선.
+그래픽 영역 제외 및 가짜 테이블 필터링 기능 포함.
+셀 추출 정확도 개선.
 """
 
 import logging
@@ -12,8 +12,8 @@ from typing import List, Dict, Optional, Tuple, Any, Set
 import fitz
 import pdfplumber
 
-from libs.core.processor.pdf_helpers.v3_types import (
-    V3Config,
+from libs.core.processor.pdf_helpers.types import (
+    PDFConfig,
     TableDetectionStrategy,
     GridInfo,
     CellInfo,
@@ -32,12 +32,11 @@ logger = logging.getLogger(__name__)
 
 class TableDetectionEngine:
     """
-    테이블 감지 엔진 (V3.1 고도화)
+    테이블 감지 엔진 
 
     다중 전략을 사용하여 테이블을 감지하고 최선의 결과를 선택합니다.
 
-    V3.1 개선사항:
-    - GraphicRegionDetector 통합으로 벡터 그래픽 영역 제외
+        - GraphicRegionDetector 통합으로 벡터 그래픽 영역 제외
     - TableQualityValidator 통합으로 가짜 테이블 필터링
 
     지원 전략:
@@ -47,9 +46,9 @@ class TableDetectionEngine:
     """
 
     # 설정 상수
-    CONFIDENCE_THRESHOLD = getattr(V3Config, 'CONFIDENCE_THRESHOLD', 0.5)
-    MIN_TABLE_ROWS = getattr(V3Config, 'MIN_TABLE_ROWS', 2)
-    MIN_TABLE_COLS = getattr(V3Config, 'MIN_TABLE_COLS', 2)
+    CONFIDENCE_THRESHOLD = getattr(PDFConfig, 'CONFIDENCE_THRESHOLD', 0.5)
+    MIN_TABLE_ROWS = getattr(PDFConfig, 'MIN_TABLE_ROWS', 2)
+    MIN_TABLE_COLS = getattr(PDFConfig, 'MIN_TABLE_COLS', 2)
 
     def __init__(self, page, page_num: int, file_path: str):
         """
@@ -68,11 +67,11 @@ class TableDetectionEngine:
         self.line_engine = LineAnalysisEngine(page, self.page_width, self.page_height)
         self.h_lines, self.v_lines = self.line_engine.analyze()
 
-        # V3.1: 그래픽 영역 감지기
+        # 그래픽 영역 감지기
         self.graphic_detector = GraphicRegionDetector(page, page_num)
         self.graphic_regions = self.graphic_detector.detect()
 
-        # V3.1: 테이블 품질 검증기
+        # 테이블 품질 검증기
         self.quality_validator = TableQualityValidator(page, self.graphic_detector)
 
     def detect_tables(self) -> List[TableCandidate]:
@@ -87,7 +86,7 @@ class TableDetectionEngine:
         # Strategy 1: PyMuPDF
         pymupdf_candidates = self._detect_with_pymupdf()
 
-        # V3.2: 인접 헤더-데이터 테이블 사전 병합 (검증 전)
+        # 인접 헤더-데이터 테이블 사전 병합 (검증 전)
         pymupdf_candidates = self._merge_header_data_tables(pymupdf_candidates)
         candidates.extend(pymupdf_candidates)
 
@@ -97,11 +96,11 @@ class TableDetectionEngine:
         candidates.extend(pdfplumber_candidates)
 
         # Strategy 3: Line-based (HYBRID_ANALYSIS)
-        # V3.2: PyMuPDF와 pdfplumber가 테이블을 찾지 못한 경우에만 사용
+        # PyMuPDF와 pdfplumber가 테이블을 찾지 못한 경우에만 사용
         # 또는 찾았더라도 추가로 사용하되, 더 엄격한 검증 적용
         line_candidates = self._detect_with_lines()
 
-        # V3.2: HYBRID 결과에 대한 교차 검증 강화
+        # HYBRID 결과에 대한 교차 검증 강화
         if line_candidates and not pymupdf_candidates:
             # PyMuPDF가 테이블을 찾지 못했는데 HYBRID가 찾은 경우
             # 더 높은 신뢰도 임계값 적용 (0.65 이상)
@@ -114,7 +113,7 @@ class TableDetectionEngine:
 
         candidates.extend(line_candidates)
 
-        # V3.1: 품질 검증을 통한 가짜 테이블 필터링
+        # 품질 검증을 통한 가짜 테이블 필터링
         validated_candidates = self._validate_candidates(candidates)
 
         # 신뢰도 기반 최선의 후보 선택
@@ -124,7 +123,7 @@ class TableDetectionEngine:
 
     def _merge_header_data_tables(self, candidates: List[TableCandidate]) -> List[TableCandidate]:
         """
-        V3.2: 인접한 헤더-데이터 테이블을 병합합니다.
+        인접한 헤더-데이터 테이블을 병합합니다.
 
         조건:
         1. 첫 번째 테이블이 1-2행 (헤더로 추정)
@@ -393,28 +392,28 @@ class TableDetectionEngine:
 
     def _validate_candidates(self, candidates: List[TableCandidate]) -> List[TableCandidate]:
         """
-        V3.1: 테이블 후보들을 품질 검증합니다.
+        테이블 후보들을 품질 검증합니다.
 
         검증 기준:
         1. 그래픽 영역과 겹치지 않는지 (PyMuPDF 제외 - 텍스트 기반으로 신뢰도 높음)
         2. 채워진 셀 비율이 충분한지
         3. 의미 있는 데이터가 있는지
 
-        V3.2: PyMuPDF 전략으로 감지된 테이블은 그래픽 영역 체크를 건너뜁니다.
+        PyMuPDF 전략으로 감지된 테이블은 그래픽 영역 체크를 건너뜁니다.
         이유: PyMuPDF는 텍스트 기반으로 테이블을 감지하므로, 배경색이 있는 셀이
         그래픽으로 오인되는 경우에도 정확하게 테이블을 인식합니다.
         """
         validated = []
 
         for candidate in candidates:
-            # V3.2: PyMuPDF 전략은 그래픽 영역 체크를 건너뜀
+            # PyMuPDF 전략은 그래픽 영역 체크를 건너뜀
             skip_graphic_check = (candidate.strategy == TableDetectionStrategy.PYMUPDF_NATIVE)
 
             is_valid, new_confidence, reason = self.quality_validator.validate(
                 data=candidate.data,
                 bbox=candidate.bbox,
                 cells_info=candidate.cells,
-                skip_graphic_check=skip_graphic_check  # V3.2: 새 파라미터
+                skip_graphic_check=skip_graphic_check  # 새 파라미터
             )
 
             if is_valid:
@@ -437,14 +436,14 @@ class TableDetectionEngine:
         return validated
 
     def _detect_with_pymupdf(self) -> List[TableCandidate]:
-        """PyMuPDF find_tables() 사용 (V3.5: tolerance 설정으로 이중선 문제 해결)"""
+        """PyMuPDF find_tables() 사용 (tolerance 설정으로 이중선 문제 해결)"""
         candidates = []
 
         if not hasattr(self.page, 'find_tables'):
             return candidates
 
         try:
-            # V3.5: pdf_handler.py와 동일한 tolerance 설정 적용
+            # pdf_handler.py와 동일한 tolerance 설정 적용
             # 이중선/삼중선 테두리로 인한 가짜 열 생성 문제를 해결
             # snap_tolerance: 근접한 좌표들을 스냅하여 하나로 처리
             # join_tolerance: 근접한 선들을 하나로 합침
@@ -464,7 +463,7 @@ class TableDetectionEngine:
                     if not table_data or not any(any(cell for cell in row if cell) for row in table_data):
                         continue
 
-                    # V3.4: 좁은 열 병합 처리
+                    # 좁은 열 병합 처리
                     merged_data, col_mapping = self._merge_narrow_columns(
                         table_data, table.cells if hasattr(table, 'cells') else None
                     )
@@ -489,11 +488,11 @@ class TableDetectionEngine:
                     ))
 
                 except Exception as e:
-                    logger.debug(f"[PDF-V3] PyMuPDF table extraction error: {e}")
+                    logger.debug(f"[PDF] PyMuPDF table extraction error: {e}")
                     continue
 
         except Exception as e:
-            logger.debug(f"[PDF-V3] PyMuPDF find_tables error: {e}")
+            logger.debug(f"[PDF] PyMuPDF find_tables error: {e}")
 
         return candidates
 
@@ -504,7 +503,7 @@ class TableDetectionEngine:
         min_col_width: float = 15.0
     ) -> Tuple[List[List[str]], Dict[int, int]]:
         """
-        V3.4: 좁은 열들을 인접 열과 병합합니다.
+        좁은 열들을 인접 열과 병합합니다.
 
         PDF의 이중선/삼중선 테두리로 인해 생성된 가짜 열들을 제거합니다.
 
@@ -689,7 +688,7 @@ class TableDetectionEngine:
         col_mapping: Dict[int, int]
     ) -> List[CellInfo]:
         """
-        V3.4: 열 매핑을 적용하여 셀 정보 추출
+        열 매핑을 적용하여 셀 정보 추출
         """
         if not col_mapping:
             return self._extract_cells_from_pymupdf(table)
@@ -740,10 +739,9 @@ class TableDetectionEngine:
 
     def _calculate_pymupdf_confidence(self, table, data: List[List]) -> float:
         """
-        PyMuPDF 결과 신뢰도 계산 (V3.3 개선)
+        PyMuPDF 결과 신뢰도 계산 
 
-        V3.3 개선:
-        - 기본 점수 상향 (PyMuPDF 결과 신뢰)
+                - 기본 점수 상향 (PyMuPDF 결과 신뢰)
         - 패널티 완화
         - 셀 정보 보너스 강화
         """
@@ -759,7 +757,7 @@ class TableDetectionEngine:
         if table.col_count >= self.MIN_TABLE_COLS:
             score += 0.1
 
-        # 데이터 밀도에 따른 점수 (V3.3: 패널티 완화)
+        # 데이터 밀도에 따른 점수 (패널티 완화)
         total_cells = sum(len(row) for row in data)
         filled_cells = sum(1 for row in data for cell in row if cell and str(cell).strip())
 
@@ -774,11 +772,11 @@ class TableDetectionEngine:
             else:
                 score += density * 0.15
 
-        # 셀 정보가 있으면 추가 점수 (V3.3: 보너스 강화)
+        # 셀 정보가 있으면 추가 점수 (보너스 강화)
         if hasattr(table, 'cells') and table.cells:
             score += 0.15
 
-        # 의미 있는 셀 수 체크 (V3.3: 패널티 완화)
+        # 의미 있는 셀 수 체크 (패널티 완화)
         meaningful_count = sum(
             1 for row in data for cell in row
             if cell and len(str(cell).strip()) >= 2
@@ -787,12 +785,12 @@ class TableDetectionEngine:
         if meaningful_count < 2:
             score -= 0.1
 
-        # 유효 행 수 체크 (V3.3: 패널티 완화)
+        # 유효 행 수 체크 (패널티 완화)
         valid_rows = sum(1 for row in data if any(cell and str(cell).strip() for cell in row))
         if valid_rows <= 1:
             score -= 0.1
 
-        # 그래픽 영역 겹침 확인 (V3.3: 패널티 완화)
+        # 그래픽 영역 겹침 확인 (패널티 완화)
         if self.graphic_detector:
             if self.graphic_detector.is_bbox_in_graphic_region(table.bbox, threshold=0.5):
                 score -= 0.15
@@ -801,7 +799,7 @@ class TableDetectionEngine:
 
     def _extract_cells_from_pymupdf(self, table) -> List[CellInfo]:
         """
-        PyMuPDF 테이블에서 셀 정보 추출 (V3.4 개선)
+        PyMuPDF 테이블에서 셀 정보 추출 
 
         pdf_handler_default의 _extract_cell_spans_from_table() 로직 적용:
         1. table.cells에서 각 셀의 물리적 bbox 추출
@@ -887,7 +885,7 @@ class TableDetectionEngine:
 
     def _cluster_grid_positions(self, positions: List[float], tolerance: float = 3.0) -> List[float]:
         """
-        V3.3: 그리드 위치 클러스터링
+        그리드 위치 클러스터링
 
         근접한 라인들을 하나로 병합합니다.
         """
@@ -912,7 +910,7 @@ class TableDetectionEngine:
     def _find_grid_index_v2(self, value: float, grid_lines: List[float],
                             tolerance: float = 5.0) -> Optional[int]:
         """
-        V3.3: 그리드 라인에서 값의 인덱스 찾기 (개선 버전)
+        그리드 라인에서 값의 인덱스 찾기 (개선 버전)
 
         정확한 매칭이 실패하면 가장 가까운 라인 선택
         """
@@ -991,7 +989,7 @@ class TableDetectionEngine:
                     ))
 
         except Exception as e:
-            logger.debug(f"[PDF-V3] pdfplumber error: {e}")
+            logger.debug(f"[PDF] pdfplumber error: {e}")
 
         return candidates
 
@@ -1269,7 +1267,7 @@ class TableDetectionEngine:
         """
         최선의 테이블 후보 선택
 
-        V3.2: 전략 우선순위를 더 강하게 반영
+        전략 우선순위를 더 강하게 반영
         - PyMuPDF가 가장 정확하므로, 같은 영역에서 PyMuPDF 결과 우선
         - 신뢰도 차이가 0.2 미만이면 전략 우선순위로 선택
         """
@@ -1284,7 +1282,7 @@ class TableDetectionEngine:
             TableDetectionStrategy.BORDERLESS_HEURISTIC: 3,
         }
 
-        # V3.2: 정렬 키 변경 - 전략 우선순위를 더 중요하게
+        # 정렬 키 변경 - 전략 우선순위를 더 중요하게
         # 신뢰도 차이가 크지 않으면 전략 우선순위로 결정
         def sort_key(c):
             # 전략 우선순위 * 0.15를 신뢰도에서 뺌

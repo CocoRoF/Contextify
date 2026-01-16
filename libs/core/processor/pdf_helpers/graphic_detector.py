@@ -1,5 +1,5 @@
 """
-Graphic Region Detector for PDF Handler V3
+Graphic Region Detector for PDF Handler
 
 PDF 페이지에서 그래픽 영역(차트, 다이어그램, 아이콘 등)을 감지합니다.
 이 영역은 테이블로 오인되지 않도록 필터링됩니다.
@@ -10,7 +10,7 @@ from typing import List, Dict, Tuple, Optional
 
 import fitz
 
-from libs.core.processor.pdf_helpers.v3_types import GraphicRegionInfo, V3Config
+from libs.core.processor.pdf_helpers.types import GraphicRegionInfo, PDFConfig
 
 logger = logging.getLogger(__name__)
 
@@ -210,9 +210,9 @@ class GraphicRegionDetector:
         2. 채워진 도형이 많음
         3. 다양한 색상 사용
         4. 영역 크기 대비 선/곡선 밀도가 높음
-        5. V3.2: 차트 패턴 감지 (곡선 + 채우기 조합)
+        5. 차트 패턴 감지 (곡선 + 채우기 조합)
         
-        V3.2 개선: 테이블 셀(격자 형태의 사각형)은 그래픽에서 제외
+        테이블 셀(격자 형태의 사각형)은 그래픽에서 제외합니다.
         """
         total_items = region.curve_count + region.line_count + region.rect_count
         
@@ -226,33 +226,33 @@ class GraphicRegionDetector:
         
         # 1. 곡선 비율 체크 (원형 차트, 곡선 그래프 등)
         curve_ratio = region.curve_count / total_items if total_items > 0 else 0
-        if curve_ratio >= V3Config.GRAPHIC_CURVE_RATIO_THRESHOLD:
+        if curve_ratio >= PDFConfig.GRAPHIC_CURVE_RATIO_THRESHOLD:
             score += 0.4
             reasons.append(f"curve_ratio={curve_ratio:.2f}")
         
         # 2. 최소 곡선 수 체크
-        if region.curve_count >= V3Config.GRAPHIC_MIN_CURVE_COUNT:
+        if region.curve_count >= PDFConfig.GRAPHIC_MIN_CURVE_COUNT:
             score += 0.2
             reasons.append(f"curves={region.curve_count}")
         
         # 3. 채워진 도형 비율
         fill_ratio = region.fill_count / max(1, total_items // 10)  # 대략적 도형 수 추정
-        if fill_ratio >= V3Config.GRAPHIC_FILL_RATIO_THRESHOLD:
+        if fill_ratio >= PDFConfig.GRAPHIC_FILL_RATIO_THRESHOLD:
             score += 0.2
             reasons.append(f"fills={region.fill_count}")
         
         # 4. 색상 다양성 (차트는 보통 여러 색상 사용)
-        if region.color_count >= V3Config.GRAPHIC_COLOR_VARIETY_THRESHOLD:
+        if region.color_count >= PDFConfig.GRAPHIC_COLOR_VARIETY_THRESHOLD:
             score += 0.2
             reasons.append(f"colors={region.color_count}")
         
-        # 5. V3.2: 곡선이 있는 차트 패턴
+        # 5. 곡선이 있는 차트 패턴
         # 곡선이 있으면서 채우기가 많으면 차트일 가능성 높음
         if region.curve_count >= 5 and region.fill_count >= 3:
             score += 0.3
             reasons.append(f"chart_pattern(curves={region.curve_count}, fills={region.fill_count})")
         
-        # 6. V3.2: 사각형만 있고 곡선이 없는 경우 - 테이블 셀일 가능성!
+        # 6. 사각형만 있고 곡선이 없는 경우 - 테이블 셀일 가능성!
         # 테이블 셀은 그래픽이 아님
         if region.rect_count >= 5 and region.curve_count == 0 and region.line_count == 0:
             # 사각형만 있으면 테이블일 가능성이 높음

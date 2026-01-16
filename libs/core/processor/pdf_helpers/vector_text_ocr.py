@@ -1,5 +1,5 @@
 """
-Vector Text OCR Engine for PDF Handler V3
+Vector Text OCR Engine for PDF Handler
 
 PDF에서 텍스트가 폰트 글리프가 아닌 벡터 곡선(Bézier curves)으로
 렌더링된 영역을 감지하고 OCR로 텍스트를 추출합니다.
@@ -13,7 +13,7 @@ import fitz
 from PIL import Image
 import pytesseract
 
-from libs.core.processor.pdf_helpers.v3_types import VectorTextRegion
+from libs.core.processor.pdf_helpers.types import VectorTextRegion
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,5 @@
 """
-Line Analysis Engine for PDF Handler V3
+Line Analysis Engine for PDF Handler
 
 PDF의 drawings에서 선을 추출하고 분석합니다.
 - 얇은 선 감지
@@ -13,7 +13,7 @@ from typing import List, Optional, Tuple
 
 import fitz
 
-from libs.core.processor.pdf_helpers.v3_types import LineInfo, GridInfo, LineThickness, V3Config
+from libs.core.processor.pdf_helpers.types import LineInfo, GridInfo, LineThickness, PDFConfig
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +32,12 @@ class LineAnalysisEngine:
     - 불완전 테두리 복구
     """
     
-    # 설정 상수 (V3Config에서 가져오거나 기본값 사용)
-    THIN_LINE_THRESHOLD = getattr(V3Config, 'THIN_LINE_THRESHOLD', 0.5)
-    THICK_LINE_THRESHOLD = getattr(V3Config, 'THICK_LINE_THRESHOLD', 2.0)
-    DOUBLE_LINE_GAP = getattr(V3Config, 'DOUBLE_LINE_GAP', 5.0)
-    LINE_MERGE_TOLERANCE = getattr(V3Config, 'LINE_MERGE_TOLERANCE', 3.0)
-    BORDER_EXTENSION_MARGIN = getattr(V3Config, 'BORDER_EXTENSION_MARGIN', 20.0)
+    # 설정 상수 (PDFConfig에서 가져오거나 기본값 사용)
+    THIN_LINE_THRESHOLD = getattr(PDFConfig, 'THIN_LINE_THRESHOLD', 0.5)
+    THICK_LINE_THRESHOLD = getattr(PDFConfig, 'THICK_LINE_THRESHOLD', 2.0)
+    DOUBLE_LINE_GAP = getattr(PDFConfig, 'DOUBLE_LINE_GAP', 5.0)
+    LINE_MERGE_TOLERANCE = getattr(PDFConfig, 'LINE_MERGE_TOLERANCE', 3.0)
+    BORDER_EXTENSION_MARGIN = getattr(PDFConfig, 'BORDER_EXTENSION_MARGIN', 20.0)
     
     def __init__(self, page, page_width: float, page_height: float):
         """

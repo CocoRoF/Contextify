@@ -1,5 +1,5 @@
 """
-Text Quality Analyzer for PDF Handler V3
+Text Quality Analyzer for PDF Handler
 
 PDF에서 추출된 텍스트의 품질을 분석하고, 깨진 텍스트(인코딩 문제, 
 ToUnicode CMap 누락 등)를 감지하여 OCR 폴백 필요 여부를 판단합니다.

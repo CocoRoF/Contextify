@@ -1,5 +1,5 @@
 """
-Table Quality Analyzer for PDF Handler V4
+Table Quality Analyzer for PDF Handler
 
 테이블의 품질을 분석하여 텍스트 추출 가능 여부를 판단합니다.
 

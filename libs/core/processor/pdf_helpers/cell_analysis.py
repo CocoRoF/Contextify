@@ -1,10 +1,9 @@
 # service/document_processor/processor/pdf_helpers/cell_analysis.py
 """
-Cell Analysis Engine - V3.3 고도화
+Cell Analysis Engine
 
 물리적 셀 정보와 텍스트 위치를 분석하여 정확한 rowspan/colspan을 계산합니다.
 
-V3.3 개선사항:
 - bbox 기반 정밀 그리드 분석
 - 병합셀과 빈 셀의 정확한 구분
 - 텍스트 위치 기반 병합 검증 강화
@@ -19,12 +18,11 @@ logger = logging.getLogger(__name__)
 
 class CellAnalysisEngine:
     """
-    셀 분석 엔진 (V3.3 고도화)
+    셀 분석 엔진
 
     물리적 셀 정보와 텍스트 위치를 분석하여 정확한 rowspan/colspan을 계산합니다.
 
-    V3.3 개선사항:
-    - PyMuPDF 셀 정보가 있으면 bbox 기반 정밀 분석
+        - PyMuPDF 셀 정보가 있으면 bbox 기반 정밀 분석
     - 그리드 라인 기반 셀 위치 재계산
     - 빈 셀과 병합셀의 정확한 구분
     """
@@ -56,8 +54,7 @@ class CellAnalysisEngine:
         Returns:
             셀 정보 리스트 (row, col, rowspan, colspan, bbox)
 
-        V3.4 개선:
-        - TableDetectionEngine에서 이미 계산된 rowspan/colspan 정보가 있으면 그대로 사용
+                - TableDetectionEngine에서 이미 계산된 rowspan/colspan 정보가 있으면 그대로 사용
         - 불필요한 재계산 방지로 정확도 향상
         """
         num_rows = len(self.data)
@@ -66,7 +63,7 @@ class CellAnalysisEngine:
         if num_rows == 0 or num_cols == 0:
             return []
 
-        # V3.4: 셀 정보에 이미 유효한 rowspan/colspan이 있으면 검증 후 바로 사용
+        # 셀 정보에 이미 유효한 rowspan/colspan이 있으면 검증 후 바로 사용
         if self.cells_info and self._has_valid_span_info():
             result = self._use_existing_cells_with_validation(num_rows, num_cols)
             if result:
@@ -88,8 +85,7 @@ class CellAnalysisEngine:
         return self._create_default_cells(num_rows, num_cols)
 
     def _has_valid_span_info(self) -> bool:
-        """
-        V3.4: 셀 정보에 유효한 rowspan/colspan이 있는지 확인
+        """ 셀 정보에 유효한 rowspan/colspan이 있는지 확인
 
         조건:
         - 2개 이상의 셀에서 rowspan > 1 또는 colspan > 1인 경우
@@ -114,8 +110,7 @@ class CellAnalysisEngine:
         return has_span or has_position
 
     def _use_existing_cells_with_validation(self, num_rows: int, num_cols: int) -> List[Dict]:
-        """
-        V3.4: 기존 셀 정보를 검증 후 그대로 사용
+        """ 기존 셀 정보를 검증 후 그대로 사용
 
         TableDetectionEngine에서 이미 올바르게 계산된 rowspan/colspan을
         다시 계산하지 않고 범위만 검증하여 사용
@@ -337,8 +332,7 @@ class CellAnalysisEngine:
         """
         기존 셀 정보 검증 및 보완.
 
-        V3.3 개선:
-        - 데이터 범위를 벗어나는 span 수정
+                - 데이터 범위를 벗어나는 span 수정
         - 중복 셀 정보 제거
         - 누락된 셀 추가
         """
@@ -411,7 +405,7 @@ class CellAnalysisEngine:
         bbox: Tuple[float, float, float, float]
     ) -> Tuple[int, int]:
         """
-        텍스트 위치로 span 검증 (V3.3 강화).
+        텍스트 위치로 span 검증.
 
         로직:
         - 현재 셀에 텍스트가 있고
@@ -470,9 +464,7 @@ class CellAnalysisEngine:
 
     def _create_default_cells(self, num_rows: int, num_cols: int) -> List[Dict]:
         """
-        기본 셀 정보 생성.
-
-        V3.3: 값 기반 추론을 제거하고 모든 셀을 1x1로 생성.
+        기본 셀 정보 생성. 값 기반 추론을 제거하고 모든 셀을 1x1로 생성.
         값 기반 추론은 오류가 많아 비활성화하고,
         PyMuPDF의 물리적 셀 정보를 우선 사용합니다.
 
@@ -492,27 +484,6 @@ class CellAnalysisEngine:
                 })
 
         return cells
-
-    def _infer_cells_from_data_v2(self) -> List[Dict]:
-        """
-        ★ V3.3 비활성화: 값 기반 병합셀 추론
-
-        이 메서드는 잘못된 추론으로 인해 문제를 일으킬 수 있어
-        기본적으로 비활성화됩니다.
-
-        원래 로직의 문제점:
-        1. 빈 셀 = 병합셀이라는 잘못된 가정
-        2. 실제로 비어있는 데이터 셀과 병합셀 구분 불가
-        3. 표 구조를 왜곡시킴
-
-        PyMuPDF의 물리적 셀 정보가 없는 경우,
-        모든 셀을 1x1로 처리하는 것이 더 안전합니다.
-        """
-        return self._create_default_cells(
-            len(self.data),
-            max(len(row) for row in self.data) if self.data else 0
-        )
-
 
 # ============================================================================
 # Export

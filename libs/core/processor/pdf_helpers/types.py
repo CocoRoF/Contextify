@@ -1,7 +1,7 @@
 """
-PDF Handler V3 Types and Configuration
+PDF Handler Types and Configuration
 
-V3 엔진에서 사용하는 모든 데이터 클래스와 설정값을 정의합니다.
+PDF 엔진에서 사용하는 모든 데이터 클래스와 설정값을 정의합니다.
 """
 
 from dataclasses import dataclass, field
@@ -37,11 +37,11 @@ class ElementType(Enum):
 
 
 # ============================================================================
-# V3 Configuration Constants
+# Configuration Constants
 # ============================================================================
 
-class V3Config:
-    """V3 엔진 설정 상수"""
+class PDFConfig:
+    """PDF 엔진 설정 상수"""
     
     # 선 두께 임계값 (pt)
     THIN_LINE_MAX = 0.5
@@ -70,24 +70,23 @@ class V3Config:
     BORDER_MARGIN = 30.0        # 페이지 가장자리로부터의 최대 거리
     BORDER_LENGTH_RATIO = 0.8   # 페이지 크기 대비 최소 테두리 길이 비율
     
-    # V3.1: 그래픽 영역 감지 설정
+    # 그래픽 영역 감지 설정
     GRAPHIC_CURVE_RATIO_THRESHOLD = 0.3   # 곡선 비율 임계값
     GRAPHIC_MIN_CURVE_COUNT = 10          # 최소 곡선 개수
     GRAPHIC_FILL_RATIO_THRESHOLD = 0.2    # 채우기 비율 임계값
     GRAPHIC_COLOR_VARIETY_THRESHOLD = 3   # 색상 다양성 임계값
     
-    # V3.3: 테이블 품질 검증 설정 (완화됨)
-    # 일반 테이블도 빈 셀이 많을 수 있음을 고려
-    TABLE_MIN_FILLED_CELL_RATIO = 0.15    # 최소 채워진 셀 비율 (0.3 → 0.15)
-    TABLE_MAX_EMPTY_ROW_RATIO = 0.7       # 최대 빈 행 비율 (0.5 → 0.7)
-    TABLE_MIN_MEANINGFUL_CELLS = 2        # 최소 의미있는 셀 수 (3 → 2)
+    # 테이블 품질 검증 설정
+    TABLE_MIN_FILLED_CELL_RATIO = 0.15    # 최소 채워진 셀 비율
+    TABLE_MAX_EMPTY_ROW_RATIO = 0.7       # 최대 빈 행 비율
+    TABLE_MIN_MEANINGFUL_CELLS = 2        # 최소 의미있는 셀 수
     TABLE_MIN_VALID_ROWS = 2              # 최소 유효 행 수
-    TABLE_MIN_TEXT_DENSITY = 0.005        # 최소 텍스트 밀도 (0.01 → 0.005)
+    TABLE_MIN_TEXT_DENSITY = 0.005        # 최소 텍스트 밀도
     
-    # V3.3: 셀 텍스트 길이 설정 (완화됨)
-    TABLE_MAX_CELL_TEXT_LENGTH = 300      # 셀당 최대 텍스트 길이 (200 → 300)
-    TABLE_EXTREME_CELL_LENGTH = 800       # 극단적으로 긴 셀 (500 → 800)
-    TABLE_MAX_LONG_CELLS_RATIO = 0.4      # 긴 셀 최대 비율 (0.3 → 0.4)
+    # 셀 텍스트 길이 설정
+    TABLE_MAX_CELL_TEXT_LENGTH = 300      # 셀당 최대 텍스트 길이
+    TABLE_EXTREME_CELL_LENGTH = 800       # 극단적으로 긴 셀
+    TABLE_MAX_LONG_CELLS_RATIO = 0.4      # 긴 셀 최대 비율
 
 
 # ============================================================================
@@ -259,7 +258,7 @@ __all__ = [
     'TableDetectionStrategy', 
     'ElementType',
     # Config
-    'V3Config',
+    'PDFConfig',
     # Data Classes
     'LineInfo',
     'GridInfo',
