@@ -141,10 +141,10 @@ _image_processor = ImageProcessor(
 )
 
 # 모듈화된 컴포넌트 import
-from libs.core.processor.pdf_helpers.v3_types import (
+from libs.core.processor.pdf_helpers.types import (
     TableDetectionStrategy as TableDetectionStrategyType,
     ElementType,
-    V3Config as PDFConfigBase,
+    PDFConfig,
     LineInfo,
     GridInfo,
     CellInfo,
@@ -205,10 +205,10 @@ import pytesseract
 
 
 # ============================================================================
-# 설정 확장 (PDFConfigBase 기반)
+# 설정 확장 (PDFConfig 기반)
 # ============================================================================
 
-class PDFConfig(PDFConfigBase):
+class PDFConfig(PDFConfig):
     """PDF 처리 설정 상수 - 기본값 + 추가 설정"""
     # 선 분석
     THIN_LINE_THRESHOLD = 0.5      # pt
