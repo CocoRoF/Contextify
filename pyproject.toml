@@ -22,7 +22,7 @@ dependencies = [
     "langchain-text-splitters==1.1.0",
     "langgraph==1.0.5",
     "langsmith==0.6.2",
-    "bs4==0.0.2",
+    "beautifulsoup4==4.14.3",
     "docx2pdf==0.1.8",
     "python-docx==1.2.0",
     "python-pptx==1.0.2",
@@ -40,5 +40,5 @@ dependencies = [
     "striprtf==0.0.29",
     "matplotlib==3.10.8",
     "cachetools==6.2.4",
-    "aiofiles==25.1.0",
+    "aiofiles==24.1.0",
 ]

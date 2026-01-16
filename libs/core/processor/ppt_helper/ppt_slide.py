@@ -8,7 +8,7 @@ PPT 슬라이드 처리 모듈
 import logging
 from typing import List, Optional
 
-from .ppt_constants import ElementType, SlideElement
+from libs.core.processor.ppt_helper.ppt_constants import ElementType, SlideElement
 
 logger = logging.getLogger("document-processor")
 

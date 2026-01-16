@@ -13,7 +13,7 @@ from docx import Document
 from docx.oxml.ns import qn
 
 from libs.core.functions.img_processor import ImageProcessor
-from .docx_constants import ElementType, NAMESPACES
+from libs.core.processor.docx_helper.docx_constants import ElementType, NAMESPACES
 
 # 모듈 레벨 이미지 프로세서 (기본 설정)
 _image_processor = ImageProcessor(

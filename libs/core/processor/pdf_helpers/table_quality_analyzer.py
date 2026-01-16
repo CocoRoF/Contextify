@@ -30,11 +30,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Set, Any
 from enum import Enum, auto
 
-try:
-    import fitz
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
+import fitz
 
 logger = logging.getLogger(__name__)
 
@@ -156,9 +152,6 @@ class TableQualityAnalyzer:
             page_num: 페이지 번호 (0-indexed), 기본값 0
             config: 분석 설정
         """
-        if not PYMUPDF_AVAILABLE:
-            raise RuntimeError("PyMuPDF is required")
-        
         self.page = page
         self.page_num = page_num
         self.config = config or TableQualityConfig()

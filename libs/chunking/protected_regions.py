@@ -11,7 +11,7 @@ import logging
 import re
 from typing import List, Tuple
 
-from .constants import (
+from libs.chunking.constants import (
     HTML_TABLE_PATTERN, CHART_BLOCK_PATTERN, TEXTBOX_BLOCK_PATTERN,
     IMAGE_TAG_PATTERN, MARKDOWN_TABLE_PATTERN
 )

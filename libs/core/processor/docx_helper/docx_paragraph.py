@@ -11,9 +11,9 @@ from typing import Set, Tuple
 
 from docx import Document
 
-from .docx_constants import ElementType, NAMESPACES
-from .docx_drawing import process_drawing_element
-from .docx_image import process_pict_element
+from libs.core.processor.docx_helper.docx_constants import ElementType, NAMESPACES
+from libs.core.processor.docx_helper.docx_drawing import process_drawing_element
+from libs.core.processor.docx_helper.docx_image import process_pict_element
 
 logger = logging.getLogger("document-processor")
 

@@ -8,13 +8,9 @@ PDF 페이지에서 그래픽 영역(차트, 다이어그램, 아이콘 등)을 
 import logging
 from typing import List, Dict, Tuple, Optional
 
-try:
-    import fitz
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
+import fitz
 
-from .v3_types import GraphicRegionInfo, V3Config
+from libs.core.processor.pdf_helpers.v3_types import GraphicRegionInfo, V3Config
 
 logger = logging.getLogger(__name__)
 

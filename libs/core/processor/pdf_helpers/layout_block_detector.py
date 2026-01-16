@@ -69,11 +69,7 @@ from enum import Enum, auto
 from collections import defaultdict
 import math
 
-try:
-    import fitz
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
+import fitz
 
 logger = logging.getLogger(__name__)
 
@@ -271,9 +267,6 @@ class LayoutBlockDetector:
             page_num: 페이지 번호 (0-indexed)
             config: 감지 설정
         """
-        if not PYMUPDF_AVAILABLE:
-            raise RuntimeError("PyMuPDF is required for LayoutBlockDetector")
-        
         self.page = page
         self.page_num = page_num
         self.config = config or LayoutDetectorConfig()

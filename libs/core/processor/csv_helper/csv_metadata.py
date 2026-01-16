@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List
 
-from .csv_constants import DELIMITER_NAMES
+from libs.core.processor.csv_helper.csv_constants import DELIMITER_NAMES
 
 logger = logging.getLogger("document-processor")
 

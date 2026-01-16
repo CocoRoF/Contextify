@@ -18,31 +18,31 @@ DOC 및 RTF 문서 처리에 필요한 유틸리티를 제공합니다.
 """
 
 # Constants
-from .rtf_constants import *
+from libs.core.processor.doc_helpers.rtf_constants import *
 
 # Models
-from .rtf_models import *
+from libs.core.processor.doc_helpers.rtf_models import *
 
 # Parser
-from .rtf_parser import *
+from libs.core.processor.doc_helpers.rtf_parser import *
 
 # Decoder
-from .rtf_decoder import *
+from libs.core.processor.doc_helpers.rtf_decoder import *
 
 # Content Extractor
-from .rtf_content_extractor import *
+from libs.core.processor.doc_helpers.rtf_content_extractor import *
 
 # Table Extractor
-from .rtf_table_extractor import *
+from libs.core.processor.doc_helpers.rtf_table_extractor import *
 
 # Metadata Extractor
-from .rtf_metadata_extractor import *
+from libs.core.processor.doc_helpers.rtf_metadata_extractor import *
 
 # Region Finder
-from .rtf_region_finder import *
+from libs.core.processor.doc_helpers.rtf_region_finder import *
 
 # Text Cleaner
-from .rtf_text_cleaner import *
+from libs.core.processor.doc_helpers.rtf_text_cleaner import *
 
 # Binary Processor
-from .rtf_bin_processor import *
+from libs.core.processor.doc_helpers.rtf_bin_processor import *

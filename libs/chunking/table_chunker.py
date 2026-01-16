@@ -12,11 +12,11 @@ import logging
 import re
 from typing import Dict, List
 
-from .constants import (
+from libs.chunking.constants import (
     ParsedTable, TableRow,
     TABLE_WRAPPER_OVERHEAD, CHUNK_INDEX_OVERHEAD
 )
-from .table_parser import (
+from libs.chunking.table_parser import (
     parse_html_table, extract_cell_spans_with_positions, has_complex_spans
 )
 

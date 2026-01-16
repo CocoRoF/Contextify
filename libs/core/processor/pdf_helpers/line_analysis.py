@@ -11,13 +11,9 @@ import logging
 import math
 from typing import List, Optional, Tuple
 
-try:
-    import fitz
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
+import fitz
 
-from .v3_types import LineInfo, GridInfo, LineThickness, V3Config
+from libs.core.processor.pdf_helpers.v3_types import LineInfo, GridInfo, LineThickness, V3Config
 
 logger = logging.getLogger(__name__)
 

@@ -27,18 +27,9 @@ import unicodedata
 from typing import List, Dict, Tuple, Optional, Set
 from dataclasses import dataclass
 
-try:
-    import fitz
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
-
-try:
-    from PIL import Image
-    import pytesseract
-    PYTESSERACT_AVAILABLE = True
-except ImportError:
-    PYTESSERACT_AVAILABLE = False
+import fitz
+from PIL import Image
+import pytesseract
 
 logger = logging.getLogger(__name__)
 
@@ -384,10 +375,6 @@ class PageOCRFallbackEngine:
         Returns:
             OCR로 추출된 텍스트
         """
-        if not PYTESSERACT_AVAILABLE:
-            logger.warning("[PageOCR] pytesseract not available")
-            return ""
-        
         try:
             # 고해상도로 페이지 렌더링
             mat = fitz.Matrix(TextQualityConfig.OCR_SCALE, TextQualityConfig.OCR_SCALE)
@@ -495,9 +482,6 @@ class PageOCRFallbackEngine:
         Returns:
             OCR로 추출된 텍스트
         """
-        if not PYTESSERACT_AVAILABLE:
-            return ""
-        
         try:
             x0, y0, x1, y1 = bbox
             

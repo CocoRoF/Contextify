@@ -14,7 +14,7 @@ hwpx_processor.py에서 사용하는 기능적 구성요소들을 모듈화하�
 """
 
 # Constants
-from .hwpx_constants import (
+from libs.core.processor.hwpx_helper.hwpx_constants import (
     HWPX_NAMESPACES,
     OPF_NAMESPACES,
     SUPPORTED_IMAGE_EXTENSIONS,
@@ -24,30 +24,30 @@ from .hwpx_constants import (
 )
 
 # Metadata
-from .hwpx_metadata import (
+from libs.core.processor.hwpx_helper.hwpx_metadata import (
     extract_hwpx_metadata,
     parse_bin_item_map,
 )
 
 # Table
-from .hwpx_table import (
+from libs.core.processor.hwpx_helper.hwpx_table import (
     parse_hwpx_table,
     extract_cell_content,
 )
 
 # Section
-from .hwpx_section import (
+from libs.core.processor.hwpx_helper.hwpx_section import (
     parse_hwpx_section,
 )
 
 # Image
-from .hwpx_image import (
+from libs.core.processor.hwpx_helper.hwpx_image import (
     process_hwpx_images,
     get_remaining_images,
 )
 
 # Chart
-from .hwpx_chart import (
+from libs.core.processor.hwpx_helper.hwpx_chart import (
     extract_charts_from_hwpx,
 )
 

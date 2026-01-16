@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Tuple
 from docx import Document
 from docx.oxml.ns import qn
 
-from .docx_constants import NAMESPACES
+from libs.core.processor.docx_helper.docx_constants import NAMESPACES
 
 logger = logging.getLogger("document-processor")
 

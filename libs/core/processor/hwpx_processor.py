@@ -9,8 +9,8 @@ import zipfile
 import logging
 from typing import Dict, Any
 
-from .hwp_helper import MetadataHelper
-from .hwpx_helper import (
+from libs.core.processor.hwp_helper import MetadataHelper
+from libs.core.processor.hwpx_helper import (
     # Metadata
     extract_hwpx_metadata,
     parse_bin_item_map,

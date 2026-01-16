@@ -6,7 +6,7 @@ import logging
 from itertools import islice
 from typing import Optional
 
-from .hwp_constants import HWPTAG_PARA_TEXT
+from libs.core.processor.hwp_helper.hwp_constants import HWPTAG_PARA_TEXT
 
 logger = logging.getLogger("document-processor")
 

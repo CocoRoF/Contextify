@@ -195,28 +195,13 @@ from libs.core.processor.pdf_helpers.table_quality_analyzer import (
 logger = logging.getLogger("document-processor")
 
 # PyMuPDF import
-try:
-    import fitz  # PyMuPDF
-    PYMUPDF_AVAILABLE = True
-except Exception:
-    PYMUPDF_AVAILABLE = False
-    logger.error("PyMuPDF is required for PDF processing but not available")
+import fitz
 
 # pdfplumber import
-try:
-    import pdfplumber
-    PDFPLUMBER_AVAILABLE = True
-except Exception:
-    PDFPLUMBER_AVAILABLE = False
-    logger.warning("pdfplumber not available")
+import pdfplumber
 
 # pytesseract import (for outlined/vector text OCR)
-try:
-    import pytesseract
-    PYTESSERACT_AVAILABLE = True
-except Exception:
-    PYTESSERACT_AVAILABLE = False
-    logger.warning("pytesseract not available - outlined text OCR will be disabled")
+import pytesseract
 
 
 # ============================================================================
@@ -434,9 +419,6 @@ async def _extract_pdf_enhanced(
        d. 결과 통합
     3. 최종 HTML 생성 및 통합
     """
-    if not PYMUPDF_AVAILABLE:
-        raise ImportError("PyMuPDF is required for PDF processing")
-
     try:
         doc = fitz.open(file_path)
         all_pages_text = []

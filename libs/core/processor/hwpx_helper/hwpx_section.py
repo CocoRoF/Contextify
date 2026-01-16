@@ -9,20 +9,16 @@ import xml.etree.ElementTree as ET
 import zipfile
 from typing import Dict, Set, Optional
 
-from .hwpx_constants import HWPX_NAMESPACES
-from .hwpx_table import parse_hwpx_table
+from libs.core.processor.hwpx_helper.hwpx_constants import HWPX_NAMESPACES
+from libs.core.processor.hwpx_helper.hwpx_table import parse_hwpx_table
 
-# ImageProcessor import
-try:
-    from libs.core.functions.img_processor import ImageProcessor
-    _image_processor = ImageProcessor(
-        directory_path="temp/images",
-        tag_prefix="[image:",
-        tag_suffix="]"
-    )
-    IMAGE_PROCESSOR_AVAILABLE = True
-except ImportError:
-    IMAGE_PROCESSOR_AVAILABLE = False
+from libs.core.functions.img_processor import ImageProcessor
+
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[image:",
+    tag_suffix="]"
+)
 
 logger = logging.getLogger("document-processor")
 
@@ -87,7 +83,7 @@ def parse_hwpx_section(
 
                     # Image (hc:pic)
                     pic = ctrl.find('hc:pic', ns)
-                    if pic is not None and zf and bin_item_map and IMAGE_PROCESSOR_AVAILABLE:
+                    if pic is not None and zf and bin_item_map:
                         image_text = _process_inline_image(
                             pic, zf, bin_item_map, processed_images
                         )

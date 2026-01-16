@@ -9,8 +9,8 @@ Excel 차트 처리 메인 모듈
 import logging
 from typing import Any, Dict, Set
 
-from .excel_chart_formatter import format_chart_data_as_table, format_chart_fallback
-from .excel_chart_renderer import render_chart_to_image
+from libs.core.processor.excel_helper.excel_chart_formatter import format_chart_data_as_table, format_chart_fallback
+from libs.core.processor.excel_helper.excel_chart_renderer import render_chart_to_image
 
 logger = logging.getLogger("document-processor")
 

@@ -9,7 +9,7 @@ object_detect를 통해 개별 객체(테이블)별로 청킹할 수 있습니�
 
 import logging
 from typing import Optional, List
-from .excel_layout_detector import layout_detect_range_xlsx, object_detect_xlsx, LayoutRange
+from libs.core.processor.excel_helper.excel_layout_detector import layout_detect_range_xlsx, object_detect_xlsx, LayoutRange
 
 logger = logging.getLogger("document-processor")
 

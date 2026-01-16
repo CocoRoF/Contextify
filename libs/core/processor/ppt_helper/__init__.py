@@ -14,7 +14,7 @@ PPT/PPTX 문서 처리를 위한 헬퍼 함수 모음.
 """
 
 # === Constants ===
-from .ppt_constants import (
+from libs.core.processor.ppt_helper.ppt_constants import (
     WINGDINGS_MAPPING,
     WINGDINGS_CHAR_MAPPING,
     SYMBOL_MAPPING,
@@ -23,20 +23,20 @@ from .ppt_constants import (
 )
 
 # === Metadata ===
-from .ppt_metadata import (
+from libs.core.processor.ppt_helper.ppt_metadata import (
     extract_ppt_metadata,
     format_metadata,
 )
 
 # === Bullet/Numbering ===
-from .ppt_bullet import (
+from libs.core.processor.ppt_helper.ppt_bullet import (
     extract_text_with_bullets,
     extract_bullet_info,
     convert_special_font_char,
 )
 
 # === Table ===
-from .ppt_table import (
+from libs.core.processor.ppt_helper.ppt_table import (
     is_simple_table,
     extract_simple_table_as_text,
     convert_table_to_html,
@@ -45,12 +45,12 @@ from .ppt_table import (
 )
 
 # === Chart ===
-from .ppt_chart import (
+from libs.core.processor.ppt_helper.ppt_chart import (
     extract_chart_data,
 )
 
 # === Shape ===
-from .ppt_shape import (
+from libs.core.processor.ppt_helper.ppt_shape import (
     get_shape_position,
     is_picture_shape,
     process_image_shape,
@@ -58,7 +58,7 @@ from .ppt_shape import (
 )
 
 # === Slide ===
-from .ppt_slide import (
+from libs.core.processor.ppt_helper.ppt_slide import (
     extract_slide_notes,
     merge_slide_elements,
 )

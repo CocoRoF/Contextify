@@ -11,7 +11,7 @@ import logging
 import re
 from typing import List, Tuple
 
-from .protected_regions import (
+from libs.chunking.protected_regions import (
     find_protected_regions, get_protected_region_positions,
     ensure_protected_region_integrity, split_large_chunk_with_protected_regions
 )

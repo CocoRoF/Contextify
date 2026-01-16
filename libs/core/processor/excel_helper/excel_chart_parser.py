@@ -10,7 +10,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional
 
-from .excel_chart_constants import CHART_TYPE_MAP, CHART_NAMESPACES
+from libs.core.processor.excel_helper.excel_chart_constants import CHART_TYPE_MAP, CHART_NAMESPACES
 
 logger = logging.getLogger("document-processor")
 

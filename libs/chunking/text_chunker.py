@@ -14,7 +14,7 @@ from typing import List, Optional, Tuple
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from .constants import LANGCHAIN_CODE_LANGUAGE_MAP
+from libs.chunking.constants import LANGCHAIN_CODE_LANGUAGE_MAP
 
 logger = logging.getLogger("document-processor")
 

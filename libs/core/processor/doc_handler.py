@@ -36,13 +36,7 @@ import zipfile
 
 import olefile
 from bs4 import BeautifulSoup
-
-# RTF 처리 라이브러리
-try:
-    from striprtf.striprtf import rtf_to_text
-    STRIPRTF_AVAILABLE = True
-except ImportError:
-    STRIPRTF_AVAILABLE = False
+from striprtf.striprtf import rtf_to_text
 
 # 커스텀 RTF 파서 (바이너리 직접 분석)
 from libs.core.processor.doc_helpers.rtf_parser import parse_rtf, RTFDocument
@@ -401,11 +395,10 @@ async def _extract_text_from_rtf(
         logger.debug(traceback.format_exc())
 
         # 폴백: striprtf 라이브러리 사용
-        if STRIPRTF_AVAILABLE:
-            try:
-                return await _extract_text_from_rtf_fallback(file_path)
-            except Exception as e2:
-                logger.error(f"striprtf fallback also failed: {e2}")
+        try:
+            return await _extract_text_from_rtf_fallback(file_path)
+        except Exception as e2:
+            logger.error(f"striprtf fallback also failed: {e2}")
 
         # 최종 폴백: LibreOffice 변환
         return await _convert_with_libreoffice(file_path)

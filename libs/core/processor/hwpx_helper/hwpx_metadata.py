@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from typing import Any, Dict
 
-from .hwpx_constants import HWPX_NAMESPACES, HEADER_FILE_PATHS
+from libs.core.processor.hwpx_helper.hwpx_constants import HWPX_NAMESPACES, HEADER_FILE_PATHS
 
 logger = logging.getLogger("document-processor")
 

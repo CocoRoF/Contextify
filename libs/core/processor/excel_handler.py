@@ -52,21 +52,10 @@ from libs.core.processor.excel_helper import (
     convert_xls_objects_to_tables,
 )
 
+import xlrd
+from openpyxl import load_workbook
+
 logger = logging.getLogger("document-processor")
-
-# openpyxl (xlsx)
-try:
-    from openpyxl import load_workbook
-    OPENPYXL_AVAILABLE = True
-except ImportError:
-    OPENPYXL_AVAILABLE = False
-
-# xlrd (xls)
-try:
-    import xlrd
-    XLRD_AVAILABLE = True
-except ImportError:
-    XLRD_AVAILABLE = False
 
 
 # === 메인 함수 ===
@@ -91,13 +80,9 @@ async def extract_text_from_excel(
     logger.info(f"Excel processing: {file_path}, ext: {ext}")
 
     if ext == '.xlsx':
-        if not OPENPYXL_AVAILABLE:
-            raise ImportError("openpyxl이 설치되어야 .xlsx 파일을 처리할 수 있습니다.")
         return await _extract_xlsx(file_path, extract_default_metadata)
 
     elif ext == '.xls':
-        if not XLRD_AVAILABLE:
-            raise ImportError("xlrd가 설치되어야 .xls 파일을 처리할 수 있습니다.")
         return await _extract_xls(file_path, extract_default_metadata)
 
     else:

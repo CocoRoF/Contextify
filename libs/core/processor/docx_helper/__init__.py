@@ -15,7 +15,7 @@ DOCX 문서 처리에 필요한 유틸리티를 기능별로 분리한 모듈입
 """
 
 # Constants
-from .docx_constants import (
+from libs.core.processor.docx_helper.docx_constants import (
     ElementType,
     DocxElement,
     NAMESPACES,
@@ -23,13 +23,13 @@ from .docx_constants import (
 )
 
 # Metadata
-from .docx_metadata import (
+from libs.core.processor.docx_helper.docx_metadata import (
     extract_docx_metadata,
     format_metadata,
 )
 
 # Chart
-from .docx_chart import (
+from libs.core.processor.docx_helper.docx_chart import (
     parse_ooxml_chart_xml,
     extract_chart_series,
     format_chart_data,
@@ -37,13 +37,13 @@ from .docx_chart import (
 )
 
 # Image
-from .docx_image import (
+from libs.core.processor.docx_helper.docx_image import (
     extract_image_from_drawing,
     process_pict_element,
 )
 
 # Table
-from .docx_table import (
+from libs.core.processor.docx_helper.docx_table import (
     TableCellInfo,
     process_table_element,
     calculate_all_rowspans,
@@ -53,7 +53,7 @@ from .docx_table import (
 )
 
 # Drawing
-from .docx_drawing import (
+from libs.core.processor.docx_helper.docx_drawing import (
     process_drawing_element,
     extract_chart_from_drawing,
     parse_chart_data_enhanced,
@@ -61,7 +61,7 @@ from .docx_drawing import (
 )
 
 # Paragraph
-from .docx_paragraph import (
+from libs.core.processor.docx_helper.docx_paragraph import (
     process_paragraph_element,
     has_page_break_element,
 )

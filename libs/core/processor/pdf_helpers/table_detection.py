@@ -9,28 +9,19 @@ V3.3 셀 추출 정확도 개선.
 import logging
 from typing import List, Dict, Optional, Tuple, Any, Set
 
-try:
-    import fitz
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
+import fitz
+import pdfplumber
 
-try:
-    import pdfplumber
-    PDFPLUMBER_AVAILABLE = True
-except ImportError:
-    PDFPLUMBER_AVAILABLE = False
-
-from .v3_types import (
+from libs.core.processor.pdf_helpers.v3_types import (
     V3Config,
     TableDetectionStrategy,
     GridInfo,
     CellInfo,
     TableCandidate,
 )
-from .line_analysis import LineAnalysisEngine
-from .graphic_detector import GraphicRegionDetector
-from .table_validator import TableQualityValidator
+from libs.core.processor.pdf_helpers.line_analysis import LineAnalysisEngine
+from libs.core.processor.pdf_helpers.graphic_detector import GraphicRegionDetector
+from libs.core.processor.pdf_helpers.table_validator import TableQualityValidator
 
 logger = logging.getLogger(__name__)
 
@@ -101,10 +92,9 @@ class TableDetectionEngine:
         candidates.extend(pymupdf_candidates)
 
         # Strategy 2: pdfplumber
-        if PDFPLUMBER_AVAILABLE:
-            pdfplumber_candidates = self._detect_with_pdfplumber()
-            pdfplumber_candidates = self._merge_header_data_tables(pdfplumber_candidates)
-            candidates.extend(pdfplumber_candidates)
+        pdfplumber_candidates = self._detect_with_pdfplumber()
+        pdfplumber_candidates = self._merge_header_data_tables(pdfplumber_candidates)
+        candidates.extend(pdfplumber_candidates)
 
         # Strategy 3: Line-based (HYBRID_ANALYSIS)
         # V3.2: PyMuPDF와 pdfplumber가 테이블을 찾지 못한 경우에만 사용

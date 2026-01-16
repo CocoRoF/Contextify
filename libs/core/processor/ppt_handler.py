@@ -20,7 +20,7 @@ from typing import Any, Dict, List
 
 from pptx import Presentation
 
-from .ppt_helper import (
+from libs.core.processor.ppt_helper import (
     # Constants & Types
     ElementType,
     SlideElement,

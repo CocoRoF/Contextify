@@ -43,17 +43,8 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple
 from enum import Enum, auto
 
-try:
-    import fitz
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
-
-try:
-    from PIL import Image
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
+import fitz
+from PIL import Image
 
 # 이미지 처리 모듈
 from libs.core.functions.img_processor import ImageProcessor
@@ -186,9 +177,6 @@ class BlockImageEngine:
             page_num: 페이지 번호 (0-indexed)
             config: 엔진 설정
         """
-        if not PYMUPDF_AVAILABLE:
-            raise RuntimeError("PyMuPDF is required for BlockImageEngine")
-
         self.page = page
         self.page_num = page_num
         self.config = config or BlockImageConfig()
@@ -606,7 +594,7 @@ class BlockImageEngine:
         """영역이 비어있는지 확인 (흰색 위주인지)"""
         try:
             image_bytes, _, _ = self._render_region(bbox)
-            if not image_bytes or not PIL_AVAILABLE:
+            if not image_bytes:
                 return False
 
             # PIL로 분석

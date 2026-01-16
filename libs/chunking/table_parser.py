@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Dict, List, Optional, Tuple
 
-from .constants import ParsedTable, TableRow
+from libs.chunking.constants import ParsedTable, TableRow
 
 logger = logging.getLogger("document-processor")
 

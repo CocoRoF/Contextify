@@ -14,9 +14,9 @@ from typing import Optional, Set, Tuple
 from docx import Document
 from docx.oxml.ns import qn
 
-from .docx_constants import ElementType, NAMESPACES
-from .docx_image import extract_image_from_drawing
-from .docx_chart import parse_ooxml_chart_xml, format_chart_data, parse_chart_data_basic
+from libs.core.processor.docx_helper.docx_constants import ElementType, NAMESPACES
+from libs.core.processor.docx_helper.docx_image import extract_image_from_drawing
+from libs.core.processor.docx_helper.docx_chart import parse_ooxml_chart_xml, format_chart_data, parse_chart_data_basic
 
 logger = logging.getLogger("document-processor")
 

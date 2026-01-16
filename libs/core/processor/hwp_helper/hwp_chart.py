@@ -15,27 +15,17 @@ import xml.etree.ElementTree as ET
 from typing import Dict, Any, Optional, List, Set
 
 import olefile
+import matplotlib
+matplotlib.use('Agg')  # Non-GUI backend
+import matplotlib.pyplot as plt
 
-# matplotlib (차트 이미지 생성용)
-try:
-    import matplotlib
-    matplotlib.use('Agg')  # Non-GUI backend
-    import matplotlib.pyplot as plt
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
+from libs.core.functions.img_processor import ImageProcessor
 
-# 로컬 이미지 저장
-try:
-    from libs.core.functions.img_processor import ImageProcessor
-    _image_processor = ImageProcessor(
-        directory_path="temp/images",
-        tag_prefix="[image:",
-        tag_suffix="]"
-    )
-    IMAGE_PROCESSOR_AVAILABLE = True
-except ImportError:
-    IMAGE_PROCESSOR_AVAILABLE = False
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[image:",
+    tag_suffix="]"
+)
 
 logger = logging.getLogger("document-processor")
 
@@ -648,14 +638,6 @@ class ChartHelper:
         Returns:
             [chart] 태그로 감싸진 이미지 참조 문자열, 실패 시 None
         """
-        if not MATPLOTLIB_AVAILABLE:
-            logger.warning("matplotlib not available for chart rendering")
-            return None
-
-        if not IMAGE_PROCESSOR_AVAILABLE:
-            logger.warning("ImageProcessor not available for chart rendering")
-            return None
-
         if not chart_data:
             return None
 

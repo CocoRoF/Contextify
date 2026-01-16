@@ -12,9 +12,9 @@ from typing import List, Optional, Tuple
 
 from libs.core.functions.img_processor import ImageProcessor
 
-from .ppt_constants import ElementType, SlideElement
-from .ppt_bullet import extract_text_with_bullets
-from .ppt_table import is_simple_table, extract_simple_table_as_text, convert_table_to_html
+from libs.core.processor.ppt_helper.ppt_constants import ElementType, SlideElement
+from libs.core.processor.ppt_helper.ppt_bullet import extract_text_with_bullets
+from libs.core.processor.ppt_helper.ppt_table import is_simple_table, extract_simple_table_as_text, convert_table_to_html
 
 logger = logging.getLogger("document-processor")
 

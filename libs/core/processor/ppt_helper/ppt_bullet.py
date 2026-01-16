@@ -13,7 +13,7 @@ PPT 목록(Bullet/Numbering) 처리 모듈
 import logging
 from typing import Any, Dict
 
-from .ppt_constants import WINGDINGS_MAPPING, WINGDINGS_CHAR_MAPPING, SYMBOL_MAPPING
+from libs.core.processor.ppt_helper.ppt_constants import WINGDINGS_MAPPING, WINGDINGS_CHAR_MAPPING, SYMBOL_MAPPING
 
 logger = logging.getLogger("document-processor")
 

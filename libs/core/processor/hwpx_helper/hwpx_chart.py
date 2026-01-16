@@ -11,14 +11,8 @@ import zlib
 import zipfile
 from typing import List, Set
 
-from .hwpx_constants import SKIP_IMAGE_EXTENSIONS
-
-# hwp_helper에서 ChartHelper import
-try:
-    from ..hwp_helper import ChartHelper
-    CHART_HELPER_AVAILABLE = True
-except ImportError:
-    CHART_HELPER_AVAILABLE = False
+from libs.core.processor.hwpx_helper.hwpx_constants import SKIP_IMAGE_EXTENSIONS
+from libs.core.processor.hwp_helper import ChartHelper
 
 logger = logging.getLogger("document-processor")
 
@@ -37,10 +31,6 @@ def extract_charts_from_hwpx(zf: zipfile.ZipFile) -> List[str]:
     Returns:
         포맷된 차트 데이터 문자열 목록
     """
-    if not CHART_HELPER_AVAILABLE:
-        logger.warning("ChartHelper not available, skipping chart extraction")
-        return []
-
     chart_results = []
     processed_chart_hashes: Set[str] = set()  # 중복 방지용
 

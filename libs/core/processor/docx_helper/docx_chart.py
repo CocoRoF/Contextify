@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional
 
 from lxml import etree
 
-from .docx_constants import CHART_TYPE_MAP
+from libs.core.processor.docx_helper.docx_constants import CHART_TYPE_MAP
 
 logger = logging.getLogger("document-processor")
 

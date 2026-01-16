@@ -17,7 +17,7 @@ HWP 5.0 OLE 파일 처리에 필요한 유틸리티 모듈을 제공합니다.
 """
 
 # Constants
-from .hwp_constants import (
+from libs.core.processor.hwp_helper.hwp_constants import (
     HWPTAG_BEGIN,
     HWPTAG_BIN_DATA,
     HWPTAG_PARA_HEADER,
@@ -34,17 +34,17 @@ from .hwp_constants import (
 )
 
 # Record Parser
-from .hwp_record import HwpRecord
+from libs.core.processor.hwp_helper.hwp_record import HwpRecord
 
 # Decoder
-from .hwp_decoder import (
+from libs.core.processor.hwp_helper.hwp_decoder import (
     is_compressed,
     decompress_stream,
     decompress_section,
 )
 
 # Metadata
-from .hwp_metadata import (
+from libs.core.processor.hwp_helper.hwp_metadata import (
     extract_metadata,
     parse_hwp_summary_information,
     format_metadata,
@@ -52,7 +52,7 @@ from .hwp_metadata import (
 )
 
 # Image
-from .hwp_image import (
+from libs.core.processor.hwp_helper.hwp_image import (
     try_decompress_image,
     save_image_to_local,
     find_bindata_stream,
@@ -63,23 +63,23 @@ from .hwp_image import (
 )
 
 # Chart
-from .hwp_chart import ChartHelper
+from libs.core.processor.hwp_helper.hwp_chart import ChartHelper
 
 # DocInfo
-from .hwp_docinfo import (
+from libs.core.processor.hwp_helper.hwp_docinfo import (
     parse_doc_info,
     scan_bindata_folder,
 )
 
 # Table
-from .hwp_table import (
+from libs.core.processor.hwp_helper.hwp_table import (
     parse_table,
     build_table_grid,
     render_table_html,
 )
 
 # Recovery
-from .hwp_recovery import (
+from libs.core.processor.hwp_helper.hwp_recovery import (
     extract_text_from_stream_raw,
     find_zlib_streams,
     recover_images_from_raw,

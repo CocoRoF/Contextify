@@ -9,19 +9,14 @@ import os
 import zipfile
 from typing import List
 
-from .hwpx_constants import SUPPORTED_IMAGE_EXTENSIONS
+from libs.core.processor.hwpx_helper.hwpx_constants import SUPPORTED_IMAGE_EXTENSIONS
+from libs.core.functions.img_processor import ImageProcessor
 
-# ImageProcessor import
-try:
-    from libs.core.functions.img_processor import ImageProcessor
-    _image_processor = ImageProcessor(
-        directory_path="temp/images",
-        tag_prefix="[image:",
-        tag_suffix="]"
-    )
-    IMAGE_PROCESSOR_AVAILABLE = True
-except ImportError:
-    IMAGE_PROCESSOR_AVAILABLE = False
+_image_processor = ImageProcessor(
+    directory_path="temp/images",
+    tag_prefix="[image:",
+    tag_suffix="]"
+)
 
 logger = logging.getLogger("document-processor")
 
@@ -40,10 +35,6 @@ async def process_hwpx_images(
     Returns:
         이미지 태그 문자열들을 줄바꿈으로 연결한 결과
     """
-    if not IMAGE_PROCESSOR_AVAILABLE:
-        logger.warning("ImageProcessor not available, skipping image processing")
-        return ""
-
     results = []
 
     for img_path in image_files:

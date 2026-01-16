@@ -13,7 +13,7 @@ csv_handler.py에서 사용하는 기능적 구성요소들을 모듈화하여 �
 """
 
 # Constants
-from .csv_constants import (
+from libs.core.processor.csv_helper.csv_constants import (
     ENCODING_CANDIDATES,
     DELIMITER_CANDIDATES,
     DELIMITER_NAMES,
@@ -23,7 +23,7 @@ from .csv_constants import (
 )
 
 # Metadata
-from .csv_metadata import (
+from libs.core.processor.csv_helper.csv_metadata import (
     format_file_size,
     get_delimiter_name,
     extract_csv_metadata,
@@ -31,13 +31,13 @@ from .csv_metadata import (
 )
 
 # Encoding
-from .csv_encoding import (
+from libs.core.processor.csv_helper.csv_encoding import (
     detect_bom,
     read_file_with_encoding,
 )
 
 # Parser
-from .csv_parser import (
+from libs.core.processor.csv_helper.csv_parser import (
     detect_delimiter,
     parse_csv_content,
     parse_csv_simple,
@@ -46,7 +46,7 @@ from .csv_parser import (
 )
 
 # Table
-from .csv_table import (
+from libs.core.processor.csv_helper.csv_table import (
     has_merged_cells,
     analyze_merge_info,
     convert_rows_to_table,

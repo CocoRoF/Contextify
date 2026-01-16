@@ -8,8 +8,8 @@ Table Quality Validator for PDF Handler V3
 import logging
 from typing import List, Tuple, Optional
 
-from .v3_types import V3Config
-from .graphic_detector import GraphicRegionDetector
+from libs.core.processor.pdf_helpers.v3_types import V3Config
+from libs.core.processor.pdf_helpers.graphic_detector import GraphicRegionDetector
 
 logger = logging.getLogger(__name__)
 

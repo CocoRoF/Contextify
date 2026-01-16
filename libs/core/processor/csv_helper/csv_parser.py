@@ -10,7 +10,7 @@ import logging
 import re
 from typing import List
 
-from .csv_constants import DELIMITER_CANDIDATES, MAX_ROWS, MAX_COLS
+from libs.core.processor.csv_helper.csv_constants import DELIMITER_CANDIDATES, MAX_ROWS, MAX_COLS
 
 logger = logging.getLogger("document-processor")
 

@@ -8,16 +8,11 @@ BOM 감지, chardet 라이브러리, 휴리스틱 방식을 사용합니다.
 import aiofiles
 import logging
 from typing import Optional, Tuple
-from .csv_constants import ENCODING_CANDIDATES
+import chardet
+
+from libs.core.processor.csv_helper.csv_constants import ENCODING_CANDIDATES
 
 logger = logging.getLogger("document-processor")
-
-# 인코딩 감지 라이브러리 (옵션)
-try:
-    import chardet
-    CHARDET_AVAILABLE = True
-except ImportError:
-    CHARDET_AVAILABLE = False
 
 
 def detect_bom(data: bytes) -> Optional[str]:
@@ -84,19 +79,18 @@ async def read_file_with_encoding(
         except UnicodeDecodeError:
             logger.debug(f"Preferred encoding {preferred_encoding} failed")
 
-    # chardet 사용 (가능한 경우)
-    if CHARDET_AVAILABLE:
-        detected = chardet.detect(raw_data[:10000])  # 처음 10KB만 분석
-        if detected and detected.get('encoding'):
-            detected_enc = detected['encoding']
-            confidence = detected.get('confidence', 0)
-            logger.debug(f"chardet detected: {detected_enc} (confidence: {confidence})")
+    # chardet 사용
+    detected = chardet.detect(raw_data[:10000])  # 처음 10KB만 분석
+    if detected and detected.get('encoding'):
+        detected_enc = detected['encoding']
+        confidence = detected.get('confidence', 0)
+        logger.debug(f"chardet detected: {detected_enc} (confidence: {confidence})")
 
-            if confidence > 0.7:
-                try:
-                    return raw_data.decode(detected_enc), detected_enc
-                except UnicodeDecodeError:
-                    pass
+        if confidence > 0.7:
+            try:
+                return raw_data.decode(detected_enc), detected_enc
+            except UnicodeDecodeError:
+                pass
 
     # 인코딩 후보 시도
     for enc in ENCODING_CANDIDATES:

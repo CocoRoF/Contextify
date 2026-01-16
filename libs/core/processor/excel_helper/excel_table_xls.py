@@ -9,16 +9,11 @@ object_detect를 통해 개별 객체(테이블)별로 청킹할 수 있습니�
 
 import logging
 from typing import Optional, List
-from .excel_layout_detector import layout_detect_range_xls, object_detect_xls, LayoutRange
+import xlrd
+
+from libs.core.processor.excel_helper.excel_layout_detector import layout_detect_range_xls, object_detect_xls, LayoutRange
 
 logger = logging.getLogger("document-processor")
-
-# xlrd (xls)
-try:
-    import xlrd
-    XLRD_AVAILABLE = True
-except ImportError:
-    XLRD_AVAILABLE = False
 
 
 def has_merged_cells_xls(sheet, layout: Optional[LayoutRange] = None) -> bool:
@@ -103,10 +98,6 @@ def convert_xls_sheet_to_markdown(sheet, wb, layout: Optional[LayoutRange] = Non
     Returns:
         Markdown 테이블 문자열
     """
-    if not XLRD_AVAILABLE:
-        logger.warning("xlrd not available for XLS processing")
-        return ""
-
     try:
         # layout이 없으면 자동 감지
         if layout is None:
@@ -175,10 +166,6 @@ def convert_xls_sheet_to_html(sheet, wb, layout: Optional[LayoutRange] = None) -
     Returns:
         HTML 테이블 문자열
     """
-    if not XLRD_AVAILABLE:
-        logger.warning("xlrd not available for XLS processing")
-        return ""
-
     try:
         # layout이 없으면 자동 감지
         if layout is None:
@@ -286,9 +273,6 @@ def _format_xls_cell_value(value, cell_type, wb) -> str:
     Returns:
         포맷된 문자열
     """
-    if not XLRD_AVAILABLE:
-        return str(value).strip() if value else ""
-    
     try:
         if cell_type == xlrd.XL_CELL_NUMBER:
             if value == int(value):

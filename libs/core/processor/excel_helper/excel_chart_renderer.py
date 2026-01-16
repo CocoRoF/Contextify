@@ -9,16 +9,11 @@ import io
 import logging
 from typing import Any, Dict, Optional, Set
 
-logger = logging.getLogger("document-processor")
+import matplotlib
+matplotlib.use('Agg')  # Non-GUI backend
+import matplotlib.pyplot as plt
 
-# matplotlib (차트 이미지 생성용)
-try:
-    import matplotlib
-    matplotlib.use('Agg')  # Non-GUI backend
-    import matplotlib.pyplot as plt
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
+logger = logging.getLogger("document-processor")
 
 
 def render_chart_to_image(
@@ -39,10 +34,6 @@ def render_chart_to_image(
     Returns:
         [chart] 태그로 감싸진 이미지 참조 문자열, 실패 시 None
     """
-    if not MATPLOTLIB_AVAILABLE:
-        logger.warning("matplotlib not available for chart rendering")
-        return None
-
     if not chart_info:
         return None
 

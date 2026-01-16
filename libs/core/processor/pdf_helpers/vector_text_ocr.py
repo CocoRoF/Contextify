@@ -9,20 +9,11 @@ import io
 import logging
 from typing import List, Dict, Tuple, Optional
 
-try:
-    import fitz
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
+import fitz
+from PIL import Image
+import pytesseract
 
-try:
-    from PIL import Image
-    import pytesseract
-    PYTESSERACT_AVAILABLE = True
-except ImportError:
-    PYTESSERACT_AVAILABLE = False
-
-from .v3_types import VectorTextRegion
+from libs.core.processor.pdf_helpers.v3_types import VectorTextRegion
 
 logger = logging.getLogger(__name__)
 
@@ -75,14 +66,6 @@ class VectorTextOCREngine:
         Returns:
             VectorTextRegion 목록 (OCR 텍스트 포함)
         """
-        if not PYTESSERACT_AVAILABLE:
-            logger.debug("[VectorTextOCR] pytesseract not available, skipping")
-            return []
-        
-        if not PYMUPDF_AVAILABLE:
-            logger.debug("[VectorTextOCR] PyMuPDF not available, skipping")
-            return []
-        
         # 1. 벡터 텍스트 영역 감지
         self._detect_vector_text_regions()
         
