@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "contextify"
+name = "contextifier"
 version = "0.1.0"
 description = "Convert raw documents into AI-understandable context with intelligent text extraction, table detection, and semantic chunking"
 readme = "README.md"
@@ -79,11 +79,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/CocoRoF/Contextify"
-Documentation = "https://github.com/CocoRoF/Contextify#readme"
-Repository = "https://github.com/CocoRoF/Contextify.git"
-Issues = "https://github.com/CocoRoF/Contextify/issues"
-Changelog = "https://github.com/CocoRoF/Contextify/releases"
+Homepage = "https://github.com/CocoRoF/Contextifier"
+Documentation = "https://github.com/CocoRoF/Contextifier#readme"
+Repository = "https://github.com/CocoRoF/Contextifier.git"
+Issues = "https://github.com/CocoRoF/Contextifier/issues"
+Changelog = "https://github.com/CocoRoF/Contextifier/releases"
 
 [tool.hatch.build.targets.wheel]
 packages = ["libs"]

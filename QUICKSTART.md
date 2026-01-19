@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-pip install contextify
+pip install contextifier
 ```
 
 ## Basic Usage
@@ -241,6 +241,6 @@ with open("file.txt", "rb") as f:
 
 ## Next Steps
 
-- Check [full documentation](https://github.com/CocoRoF/Contextify)
-- See [examples directory](https://github.com/CocoRoF/Contextify/tree/main/examples)
-- Report issues on [GitHub](https://github.com/CocoRoF/Contextify/issues)
+- Check [full documentation](https://github.com/CocoRoF/Contextifier)
+- See [examples directory](https://github.com/CocoRoF/Contextifier/tree/main/examples)
+- Report issues on [GitHub](https://github.com/CocoRoF/Contextifier/issues)

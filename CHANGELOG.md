@@ -26,4 +26,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic encoding detection for text files
 - Chart and image extraction from Office documents
 
-[0.1.0]: https://github.com/CocoRoF/Contextify/releases/tag/v0.1.0
+[0.1.0]: https://github.com/CocoRoF/Contextifier/releases/tag/v0.1.0

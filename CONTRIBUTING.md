@@ -6,8 +6,8 @@ Thank you for your interest in contributing to Contextify! This document provide
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/CocoRoF/Contextify.git
-cd contextify
+git clone https://github.com/CocoRoF/Contextifier.git
+cd contextifier
 ```
 
 2. Create a virtual environment and install dependencies:
