@@ -46,8 +46,8 @@ from libs.core.processor.csv_handler import extract_text_from_csv
 from libs.core.processor.text_handler import extract_text_from_text_file
 
 # === HWP Handlers ===
-from libs.core.processor.hwp_processor import extract_text_from_hwp
-from libs.core.processor.hwpx_processor import extract_text_from_hwpx
+from libs.core.processor.hwp_handler import extract_text_from_hwp
+from libs.core.processor.hwps_handler import extract_text_from_hwpx
 
 # === Other Processors ===
 # from libs.core.processor.html_reprocessor import ...  # HTML reprocessing

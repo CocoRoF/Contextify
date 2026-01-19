@@ -24,13 +24,6 @@ from libs.core.functions.img_processor import ImageProcessor
 
 logger = logging.getLogger("document-processor")
 
-# 모듈 레벨 이미지 프로세서
-_image_processor = ImageProcessor(
-    directory_path="temp/images",
-    tag_prefix="[image:",
-    tag_suffix="]"
-)
-
 
 def try_decompress_image(data: bytes) -> bytes:
     """
@@ -69,17 +62,21 @@ def try_decompress_image(data: bytes) -> bytes:
     return data
 
 
-def save_image_to_local(image_data: bytes) -> Optional[str]:
+def save_image_to_local(
+    image_data: bytes,
+    image_processor: ImageProcessor
+) -> Optional[str]:
     """
     이미지를 로컬에 저장합니다.
 
     Args:
         image_data: 이미지 바이너리 데이터
+        image_processor: 이미지 프로세서 인스턴스
 
     Returns:
         이미지 태그 문자열 또는 None
     """
-    return _image_processor.save_image(image_data)
+    return image_processor.save_image(image_data)
 
 
 def find_bindata_stream(ole: olefile.OleFileIO, storage_id: int, ext: str) -> Optional[List[str]]:
@@ -192,7 +189,8 @@ def extract_bindata_index(payload: bytes, bin_data_list_len: int) -> Optional[in
 def extract_and_upload_image(
     ole: olefile.OleFileIO,
     target_stream: List[str],
-    processed_images: Optional[Set[str]] = None
+    processed_images: Optional[Set[str]],
+    image_processor: ImageProcessor
 ) -> Optional[str]:
     """
     OLE 스트림에서 이미지를 추출하여 로컬에 저장합니다.
@@ -201,6 +199,7 @@ def extract_and_upload_image(
         ole: OLE 파일 객체
         target_stream: 스트림 경로
         processed_images: 처리된 이미지 경로 집합
+        image_processor: 이미지 프로세서 인스턴스
 
     Returns:
         이미지 태그 문자열 또는 None
@@ -210,7 +209,7 @@ def extract_and_upload_image(
         image_data = stream.read()
         image_data = try_decompress_image(image_data)
 
-        image_tag = save_image_to_local(image_data)
+        image_tag = save_image_to_local(image_data, image_processor)
         if image_tag:
             if processed_images is not None:
                 processed_images.add("/".join(target_stream))
@@ -225,7 +224,8 @@ def extract_and_upload_image(
 
 def process_images_from_bindata(
     ole: olefile.OleFileIO,
-    processed_images: Optional[Set[str]] = None
+    processed_images: Optional[Set[str]],
+    image_processor: ImageProcessor
 ) -> str:
     """
     BinData 스토리지에서 이미지를 추출하여 로컬에 저장합니다.
@@ -233,6 +233,7 @@ def process_images_from_bindata(
     Args:
         ole: OLE 파일 객체
         processed_images: 이미 처리된 이미지 경로 집합 (스킵용)
+        image_processor: 이미지 프로세서 인스턴스
 
     Returns:
         이미지 태그들을 결합한 문자열
@@ -256,7 +257,7 @@ def process_images_from_bindata(
                 image_data = stream.read()
                 image_data = try_decompress_image(image_data)
 
-                image_tag = save_image_to_local(image_data)
+                image_tag = save_image_to_local(image_data, image_processor)
                 if image_tag:
                     results.append(image_tag)
 
@@ -274,8 +275,11 @@ class ImageHelper:
         return try_decompress_image(data)
 
     @staticmethod
-    def save_image_to_local(image_data: bytes) -> Optional[str]:
-        return save_image_to_local(image_data)
+    def save_image_to_local(
+        image_data: bytes,
+        image_processor: ImageProcessor
+    ) -> Optional[str]:
+        return save_image_to_local(image_data, image_processor)
 
 
 __all__ = [

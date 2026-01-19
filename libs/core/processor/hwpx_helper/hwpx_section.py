@@ -14,12 +14,6 @@ from libs.core.processor.hwpx_helper.hwpx_table import parse_hwpx_table
 
 from libs.core.functions.img_processor import ImageProcessor
 
-_image_processor = ImageProcessor(
-    directory_path="temp/images",
-    tag_prefix="[image:",
-    tag_suffix="]"
-)
-
 logger = logging.getLogger("document-processor")
 
 
@@ -27,7 +21,8 @@ def parse_hwpx_section(
     xml_content: bytes,
     zf: zipfile.ZipFile = None,
     bin_item_map: Dict[str, str] = None,
-    processed_images: Set[str] = None
+    processed_images: Set[str] = None,
+    image_processor: ImageProcessor = None
 ) -> str:
     """
     HWPX 섹션 XML을 파싱합니다.
@@ -85,7 +80,7 @@ def parse_hwpx_section(
                     pic = ctrl.find('hc:pic', ns)
                     if pic is not None and zf and bin_item_map:
                         image_text = _process_inline_image(
-                            pic, zf, bin_item_map, processed_images
+                            pic, zf, bin_item_map, processed_images, image_processor
                         )
                         if image_text:
                             p_text.append(image_text)
@@ -104,7 +99,8 @@ def _process_inline_image(
     pic: ET.Element,
     zf: zipfile.ZipFile,
     bin_item_map: Dict[str, str],
-    processed_images: Optional[Set[str]]
+    processed_images: Optional[Set[str]],
+    image_processor: ImageProcessor
 ) -> str:
     """
     인라인 이미지를 처리합니다.
@@ -114,6 +110,7 @@ def _process_inline_image(
         zf: ZipFile 객체
         bin_item_map: BinItem ID -> 파일 경로 매핑
         processed_images: 처리된 이미지 경로 집합
+        image_processor: 이미지 프로세서 인스턴스
 
     Returns:
         이미지 태그 문자열 또는 빈 문자열
@@ -137,7 +134,7 @@ def _process_inline_image(
         with zf.open(full_path) as f:
             image_data = f.read()
 
-        image_tag = _image_processor.save_image(image_data)
+        image_tag = image_processor.save_image(image_data)
         if image_tag:
             if processed_images is not None:
                 processed_images.add(full_path)

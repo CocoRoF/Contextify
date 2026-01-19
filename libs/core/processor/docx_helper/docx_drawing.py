@@ -9,7 +9,7 @@ DOCX 문서의 Drawing 요소(이미지, 차트, 다이어그램)를 처리합�
 - extract_diagram_from_drawing: Drawing에서 다이어그램 추출
 """
 import logging
-from typing import Optional, Set, Tuple
+from typing import Any, Optional, Set, Tuple
 
 from docx import Document
 from docx.oxml.ns import qn
@@ -17,6 +17,7 @@ from docx.oxml.ns import qn
 from libs.core.processor.docx_helper.docx_constants import ElementType, NAMESPACES
 from libs.core.processor.docx_helper.docx_image import extract_image_from_drawing
 from libs.core.processor.docx_helper.docx_chart import parse_ooxml_chart_xml, format_chart_data, parse_chart_data_basic
+from libs.core.functions.img_processor import ImageProcessor
 
 logger = logging.getLogger("document-processor")
 
@@ -25,7 +26,8 @@ def process_drawing_element(
     drawing_elem,
     doc: Document,
     processed_images: Set[str],
-    file_path: str = None
+    file_path: str = None,
+    image_processor: Optional[ImageProcessor] = None
 ) -> Tuple[str, Optional[ElementType]]:
     """
     Drawing 요소를 처리합니다 (이미지, 차트, 다이어그램).
@@ -35,10 +37,11 @@ def process_drawing_element(
         doc: python-docx Document 객체
         processed_images: 처리된 이미지 경로 집합 (중복 방지)
         file_path: 원본 파일 경로
+        image_processor: ImageProcessor 인스턴스
 
     Returns:
         (content, element_type) 튜플
-    """
+    """"
     try:
         # inline 또는 anchor 확인
         inline = drawing_elem.find('.//wp:inline', NAMESPACES)
@@ -61,7 +64,7 @@ def process_drawing_element(
 
         # 이미지인 경우
         if 'picture' in uri.lower():
-            return extract_image_from_drawing(graphic_data, doc, processed_images)
+            return extract_image_from_drawing(graphic_data, doc, processed_images, image_processor)
 
         # 차트인 경우
         if 'chart' in uri.lower():

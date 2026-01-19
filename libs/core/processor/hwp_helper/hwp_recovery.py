@@ -14,13 +14,6 @@ from typing import List, Tuple, Optional
 
 from libs.core.functions.img_processor import ImageProcessor
 
-# 모듈 레벨 이미지 프로세서
-_image_processor = ImageProcessor(
-    directory_path="temp/images",
-    tag_prefix="[image:",
-    tag_suffix="]"
-)
-
 logger = logging.getLogger("document-processor")
 
 
@@ -128,16 +121,21 @@ def find_zlib_streams(raw_data: bytes, min_size: int = 50) -> List[Tuple[int, by
     return decompressed_chunks
 
 
-def recover_images_from_raw(raw_data: bytes) -> str:
+def recover_images_from_raw(
+    raw_data: bytes,
+    image_processor: ImageProcessor
+) -> str:
     """
     raw 바이너리 데이터에서 이미지 시그니처(JPEG, PNG)를 스캔하여 로컬에 저장합니다.
 
     Args:
         raw_data: 바이너리 데이터
+        image_processor: 이미지 프로세서 인스턴스
 
     Returns:
         이미지 태그들을 결합한 문자열
     """
+
     results = []
 
     # JPEG 추출
@@ -157,7 +155,7 @@ def recover_images_from_raw(raw_data: bytes) -> str:
         if 100 < size < 10 * 1024 * 1024:
             img_data = raw_data[start:end]
 
-            image_tag = _image_processor.save_image(img_data)
+            image_tag = image_processor.save_image(img_data)
             if image_tag:
                 results.append(image_tag)
 
@@ -183,7 +181,7 @@ def recover_images_from_raw(raw_data: bytes) -> str:
         if 100 < size < 10 * 1024 * 1024:
             img_data = raw_data[start:end]
 
-            image_tag = _image_processor.save_image(img_data)
+            image_tag = image_processor.save_image(img_data)
             if image_tag:
                 results.append(image_tag)
 

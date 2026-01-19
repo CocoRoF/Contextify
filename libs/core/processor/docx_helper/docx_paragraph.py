@@ -7,13 +7,14 @@ DOCX 문서의 Paragraph 요소를 처리합니다.
 - has_page_break_element: 페이지 브레이크 확인
 """
 import logging
-from typing import Set, Tuple
+from typing import Any, Optional, Set, Tuple
 
 from docx import Document
 
 from libs.core.processor.docx_helper.docx_constants import ElementType, NAMESPACES
 from libs.core.processor.docx_helper.docx_drawing import process_drawing_element
 from libs.core.processor.docx_helper.docx_image import process_pict_element
+from libs.core.functions.img_processor import ImageProcessor
 
 logger = logging.getLogger("document-processor")
 
@@ -22,7 +23,8 @@ def process_paragraph_element(
     para_elem,
     doc: Document,
     processed_images: Set[str],
-    file_path: str = None
+    file_path: str = None,
+    image_processor: Optional[ImageProcessor] = None
 ) -> Tuple[str, bool, int, int]:
     """
     Paragraph 요소를 처리합니다.
@@ -34,6 +36,7 @@ def process_paragraph_element(
         doc: python-docx Document 객체
         processed_images: 처리된 이미지 경로 집합 (중복 방지)
         file_path: 원본 파일 경로
+        image_processor: ImageProcessor 인스턴스
 
     Returns:
         (content, has_page_break, image_count, chart_count) 튜플
@@ -57,7 +60,7 @@ def process_paragraph_element(
             # Drawing (이미지/차트/다이어그램) 처리
             for drawing_elem in run_elem.findall('w:drawing', NAMESPACES):
                 drawing_content, drawing_type = process_drawing_element(
-                    drawing_elem, doc, processed_images, file_path
+                    drawing_elem, doc, processed_images, file_path, image_processor
                 )
                 if drawing_content:
                     content_parts.append(drawing_content)
@@ -68,7 +71,7 @@ def process_paragraph_element(
 
             # pict 요소 (레거시 VML 이미지) 처리
             for pict_elem in run_elem.findall('w:pict', NAMESPACES):
-                pict_content = process_pict_element(pict_elem, doc, processed_images)
+                pict_content = process_pict_element(pict_elem, doc, processed_images, image_processor)
                 if pict_content:
                     content_parts.append(pict_content)
                     image_count += 1

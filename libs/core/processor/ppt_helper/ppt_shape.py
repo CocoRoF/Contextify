@@ -8,7 +8,7 @@ PPT Shape 처리 모듈
 - process_group_shape(): 그룹 Shape 처리
 """
 import logging
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from libs.core.functions.img_processor import ImageProcessor
 
@@ -17,13 +17,6 @@ from libs.core.processor.ppt_helper.ppt_bullet import extract_text_with_bullets
 from libs.core.processor.ppt_helper.ppt_table import is_simple_table, extract_simple_table_as_text, convert_table_to_html
 
 logger = logging.getLogger("document-processor")
-
-# 모듈 레벨 이미지 프로세서
-_image_processor = ImageProcessor(
-    directory_path="temp/images",
-    tag_prefix="[image:",
-    tag_suffix="]"
-)
 
 
 def get_shape_position(shape) -> Tuple[int, int, int, int]:
@@ -75,19 +68,25 @@ def is_picture_shape(shape) -> bool:
     return False
 
 
-def process_image_shape(shape, processed_images: set) -> Optional[str]:
+def process_image_shape(
+    shape,
+    processed_images: set,
+    image_processor: Optional[ImageProcessor] = None
+) -> Optional[str]:
     """
     이미지 Shape을 처리하고 로컬에 저장합니다.
-
-    ImageProcessor가 중복 체크 및 저장을 처리합니다.
 
     Args:
         shape: python-pptx Shape 객체 (이미지)
         processed_images: 이미 처리된 이미지 해시 집합
+        image_processor: ImageProcessor 인스턴스
 
     Returns:
         이미지 태그 문자열 또는 None
     """
+    if image_processor is None:
+        image_processor = ImageProcessor()
+
     try:
         if not hasattr(shape, 'image'):
             return None
@@ -98,8 +97,7 @@ def process_image_shape(shape, processed_images: set) -> Optional[str]:
         if not image_bytes:
             return None
 
-        # 로컬에 저장 (ImageProcessor가 중복 체크 및 processed_images 업데이트를 처리)
-        image_tag = _image_processor.save_image(image_bytes, processed_images=processed_images)
+        image_tag = image_processor.save_image(image_bytes, processed_images=processed_images)
 
         if image_tag:
             return f"\n{image_tag}\n"
@@ -111,17 +109,25 @@ def process_image_shape(shape, processed_images: set) -> Optional[str]:
         return None
 
 
-def process_group_shape(group_shape, processed_images: set) -> List[SlideElement]:
+def process_group_shape(
+    group_shape,
+    processed_images: set,
+    image_processor: Optional[ImageProcessor] = None
+) -> List[SlideElement]:
     """
     그룹 Shape 내의 요소들을 처리합니다.
 
     Args:
         group_shape: python-pptx Group Shape 객체
         processed_images: 이미 처리된 이미지 해시 집합
+        image_processor: ImageProcessor 인스턴스
 
     Returns:
         SlideElement 리스트
     """
+    if image_processor is None:
+        image_processor = ImageProcessor()
+
     elements = []
 
     try:
@@ -152,7 +158,7 @@ def process_group_shape(group_shape, processed_images: set) -> List[SlideElement
                         ))
 
             elif is_picture_shape(shape):
-                image_tag = process_image_shape(shape, processed_images)
+                image_tag = process_image_shape(shape, processed_images, image_processor)
                 if image_tag:
                     elements.append(SlideElement(
                         element_type=ElementType.IMAGE,

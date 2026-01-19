@@ -51,13 +51,6 @@ from libs.core.functions.img_processor import ImageProcessor
 
 logger = logging.getLogger(__name__)
 
-# Module level image processor
-_image_processor = ImageProcessor(
-    directory_path="temp/images",
-    tag_prefix="[Image:",
-    tag_suffix="]"
-)
-
 
 # ============================================================================
 # Block Strategy Enum
@@ -169,13 +162,15 @@ class BlockImageEngine:
         self,
         page,
         page_num: int,
-        config: Optional[BlockImageConfig] = None
+        config: Optional[BlockImageConfig] = None,
+        image_processor: Optional[ImageProcessor] = None
     ):
         """
         Args:
             page: PyMuPDF page object
             page_num: Page number (0-indexed)
-            config: Engine configuration
+            config: Engine configuration (BlockImageConfig)
+            image_processor: ImageProcessor instance for saving images
         """
         self.page = page
         self.page_num = page_num
@@ -183,6 +178,9 @@ class BlockImageEngine:
 
         self.page_width = page.rect.width
         self.page_height = page.rect.height
+
+        # Use provided image_processor or create default
+        self._image_processor = image_processor or ImageProcessor()
 
         # Processed image hashes (duplicate prevention)
         self._processed_hashes: set = set()
@@ -241,7 +239,7 @@ class BlockImageEngine:
             self._processed_hashes.add(image_hash)
 
             # 3. Save locally (using ImageProcessor)
-            image_tag = _image_processor.save_image(image_bytes)
+            image_tag = self._image_processor.save_image(image_bytes)
 
             if not image_tag:
                 return BlockImageResult(

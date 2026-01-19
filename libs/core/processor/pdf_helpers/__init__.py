@@ -22,7 +22,6 @@ from libs.core.processor.pdf_helpers.pdf_utils import (
 
 from libs.core.processor.pdf_helpers.pdf_image import (
     extract_images_from_page,
-    get_image_processor,
 )
 
 from libs.core.processor.pdf_helpers.pdf_text_extractor import (
@@ -204,7 +203,6 @@ __all__ = [
     'bbox_overlaps',
     # pdf_image
     'extract_images_from_page',
-    'get_image_processor',
     # pdf_text_extractor
     'extract_text_blocks',
     'split_ocr_text_to_blocks',

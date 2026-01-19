@@ -7,23 +7,18 @@ HWPX 문서의 이미지를 추출하고 로컬에 저장합니다.
 import logging
 import os
 import zipfile
-from typing import List
+from typing import List, Optional
 
 from libs.core.processor.hwpx_helper.hwpx_constants import SUPPORTED_IMAGE_EXTENSIONS
 from libs.core.functions.img_processor import ImageProcessor
-
-_image_processor = ImageProcessor(
-    directory_path="temp/images",
-    tag_prefix="[image:",
-    tag_suffix="]"
-)
 
 logger = logging.getLogger("document-processor")
 
 
 def process_hwpx_images(
     zf: zipfile.ZipFile,
-    image_files: List[str]
+    image_files: List[str],
+    image_processor: ImageProcessor
 ) -> str:
     """
     HWPX zip에서 이미지를 추출하여 로컬에 저장합니다.
@@ -31,6 +26,7 @@ def process_hwpx_images(
     Args:
         zf: 열린 ZipFile 객체
         image_files: 처리할 이미지 파일 경로 목록
+        image_processor: 이미지 프로세서 인스턴스
 
     Returns:
         이미지 태그 문자열들을 줄바꿈으로 연결한 결과
@@ -44,7 +40,7 @@ def process_hwpx_images(
                 with zf.open(img_path) as f:
                     image_data = f.read()
 
-                image_tag = _image_processor.save_image(image_data)
+                image_tag = image_processor.save_image(image_data)
                 if image_tag:
                     results.append(image_tag)
 

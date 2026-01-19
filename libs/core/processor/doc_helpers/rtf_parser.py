@@ -25,6 +25,8 @@ RTF 1.5+ 스펙 기반 구현
 import logging
 from typing import Optional, Set
 
+from libs.core.functions.img_processor import ImageProcessor
+
 # 모델 임포트 (외부에서 사용할 수 있도록)
 from libs.core.processor.doc_helpers.rtf_models import (
     RTFCellInfo,
@@ -82,15 +84,18 @@ class RTFParser:
     def __init__(
         self,
         encoding: str = "cp949",
-        processed_images: Optional[Set[str]] = None
+        processed_images: Optional[Set[str]] = None,
+        image_processor: ImageProcessor = None
     ):
         """
         Args:
             encoding: 기본 인코딩 (한글 문서는 보통 cp949)
             processed_images: 처리된 이미지 해시 집합 (중복 방지)
+            image_processor: 이미지 처리기
         """
         self.encoding = encoding
         self.processed_images = processed_images if processed_images is not None else set()
+        self.image_processor = image_processor
         self.document = RTFDocument(encoding=encoding)
 
         # 파싱 상태
@@ -113,7 +118,8 @@ class RTFParser:
         # 바이너리 데이터 전처리 (\bin 태그 처리, 이미지 추출)
         clean_content, self._image_tags = preprocess_rtf_binary(
             content,
-            processed_images=self.processed_images
+            processed_images=self.processed_images,
+            image_processor=self.image_processor
         )
 
         # 이미지 태그를 문서에 저장 (유효한 태그만)
@@ -158,7 +164,8 @@ class RTFParser:
 def parse_rtf(
     content: bytes,
     encoding: str = "cp949",
-    processed_images: Optional[Set[str]] = None
+    processed_images: Optional[Set[str]] = None,
+    image_processor: ImageProcessor = None
 ) -> RTFDocument:
     """
     RTF 파일을 파싱합니다.
@@ -169,13 +176,15 @@ def parse_rtf(
         content: RTF 파일 바이트 데이터
         encoding: 기본 인코딩
         processed_images: 처리된 이미지 해시 집합 (중복 방지, optional)
+        image_processor: 이미지 처리기
 
     Returns:
         파싱된 RTFDocument 객체
     """
     parser = RTFParser(
         encoding=encoding,
-        processed_images=processed_images
+        processed_images=processed_images,
+        image_processor=image_processor
     )
     return parser.parse(content)
 

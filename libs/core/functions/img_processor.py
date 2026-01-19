@@ -399,34 +399,52 @@ class ImageProcessor:
 
 
 # ============================================================================
-# 편의 함수
+# Config-based ImageProcessor Access
 # ============================================================================
 
-# 전역 기본 프로세서 (싱글톤 패턴)
-_default_processor: Optional[ImageProcessor] = None
+# 기본 설정값
+DEFAULT_IMAGE_CONFIG = {
+    "directory_path": "temp/images",
+    "tag_prefix": "[Image:",
+    "tag_suffix": "]",
+    "naming_strategy": NamingStrategy.HASH,
+}
 
 
-def get_default_processor(
-    directory_path: str = "temp",
-    tag_prefix: str = "[Image:",
-    tag_suffix: str = "]",
+def create_image_processor(
+    directory_path: Optional[str] = None,
+    tag_prefix: Optional[str] = None,
+    tag_suffix: Optional[str] = None,
+    naming_strategy: Optional[Union[NamingStrategy, str]] = None,
 ) -> ImageProcessor:
     """
-    기본 ImageProcessor 인스턴스를 반환합니다.
+    새 ImageProcessor 인스턴스를 생성합니다.
 
-    최초 호출 시 생성되며, 이후에는 동일한 인스턴스를 반환합니다.
-    다른 설정이 필요하면 새로운 ImageProcessor를 직접 생성하세요.
+    Args:
+        directory_path: 이미지 저장 디렉토리 (기본값: "temp/images")
+        tag_prefix: 태그 접두사 (기본값: "[Image:")
+        tag_suffix: 태그 접미사 (기본값: "]")
+        naming_strategy: 파일 이름 생성 전략 (기본값: HASH)
+
+    Returns:
+        새 ImageProcessor 인스턴스
+
+    Examples:
+        >>> processor = create_image_processor(
+        ...     directory_path="output/images",
+        ...     tag_prefix="<img src='",
+        ...     tag_suffix="'/>"
+        ... )
     """
-    global _default_processor
+    if naming_strategy is not None and isinstance(naming_strategy, str):
+        naming_strategy = NamingStrategy(naming_strategy.lower())
 
-    if _default_processor is None:
-        _default_processor = ImageProcessor(
-            directory_path=directory_path,
-            tag_prefix=tag_prefix,
-            tag_suffix=tag_suffix,
-        )
-
-    return _default_processor
+    return ImageProcessor(
+        directory_path=directory_path or DEFAULT_IMAGE_CONFIG["directory_path"],
+        tag_prefix=tag_prefix or DEFAULT_IMAGE_CONFIG["tag_prefix"],
+        tag_suffix=tag_suffix or DEFAULT_IMAGE_CONFIG["tag_suffix"],
+        naming_strategy=naming_strategy or DEFAULT_IMAGE_CONFIG["naming_strategy"],
+    )
 
 
 def save_image_to_file(
@@ -478,7 +496,9 @@ __all__ = [
     "ImageProcessorConfig",
     "ImageFormat",
     "NamingStrategy",
+    # 팩토리 함수
+    "create_image_processor",
+    "DEFAULT_IMAGE_CONFIG",
     # 편의 함수
     "save_image_to_file",
-    "get_default_processor",
 ]

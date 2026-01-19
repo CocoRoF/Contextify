@@ -5,7 +5,7 @@ PDF Image Extraction Module
 Provides functions for extracting images from PDF pages.
 """
 import logging
-from typing import List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from libs.core.processor.pdf_helpers.types import (
     ElementType,
@@ -19,13 +19,6 @@ from libs.core.functions.img_processor import ImageProcessor
 
 logger = logging.getLogger("document-processor")
 
-# Module level image processor
-_image_processor = ImageProcessor(
-    directory_path="temp/images",
-    tag_prefix="[Image:",
-    tag_suffix="]"
-)
-
 
 def extract_images_from_page(
     page,
@@ -34,7 +27,8 @@ def extract_images_from_page(
     processed_images: Set[int],
     table_bboxes: List[Tuple[float, float, float, float]],
     min_image_size: int = 50,
-    min_image_area: int = 2500
+    min_image_area: int = 2500,
+    image_processor: Optional[ImageProcessor] = None
 ) -> List[PageElement]:
     """
     Extract images from page and save locally.
@@ -47,11 +41,14 @@ def extract_images_from_page(
         table_bboxes: List of table bounding boxes to exclude
         min_image_size: Minimum image dimension (width/height)
         min_image_area: Minimum image area
+        image_processor: ImageProcessor instance for saving images
 
     Returns:
         List of PageElement for extracted images
     """
     elements = []
+    if image_processor is None:
+        image_processor = ImageProcessor()
 
     try:
         image_list = page.get_images()
@@ -83,7 +80,7 @@ def extract_images_from_page(
                 if is_inside_any_bbox(img_bbox, table_bboxes, threshold=0.7):
                     continue
 
-                image_tag = _image_processor.save_image(image_bytes)
+                image_tag = image_processor.save_image(image_bytes)
 
                 if image_tag:
                     processed_images.add(xref)
@@ -103,13 +100,3 @@ def extract_images_from_page(
         logger.warning(f"[PDF] Error extracting images: {e}")
 
     return elements
-
-
-def get_image_processor() -> ImageProcessor:
-    """
-    Get the module-level image processor instance.
-
-    Returns:
-        ImageProcessor instance
-    """
-    return _image_processor

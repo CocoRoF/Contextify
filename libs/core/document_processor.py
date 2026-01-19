@@ -67,6 +67,10 @@ class DocumentProcessor:
         self,
         config: Optional[Union[Dict[str, Any], Any]] = None,
         ocr_engine: Optional[Any] = None,
+        *,
+        image_directory: Optional[str] = None,
+        image_tag_prefix: Optional[str] = None,
+        image_tag_suffix: Optional[str] = None,
         **kwargs
     ):
         """
@@ -80,7 +84,32 @@ class DocumentProcessor:
             ocr_engine: OCR engine instance (BaseOCR subclass)
                    - If provided, OCR processing can be enabled in extract_text
                    - Example: OpenAIOCR, AnthropicOCR, GeminiOCR, VllmOCR
+            image_directory: Directory path for saving extracted images
+                   - Default: "temp/images"
+            image_tag_prefix: Prefix for image tags in extracted text
+                   - Default: "[Image:"
+                   - Example: "<img src='" for HTML format
+            image_tag_suffix: Suffix for image tags in extracted text
+                   - Default: "]"
+                   - Example: "'/>" for HTML format
             **kwargs: Additional configuration options
+
+        Example:
+            >>> # Default image tags: [Image:path/to/image.png]
+            >>> processor = DocumentProcessor()
+
+            >>> # Custom HTML image tags: <img src='path/to/image.png'/>
+            >>> processor = DocumentProcessor(
+            ...     image_directory="output/images",
+            ...     image_tag_prefix="<img src='",
+            ...     image_tag_suffix="'/>"
+            ... )
+
+            >>> # Markdown image tags: ![image](path/to/image.png)
+            >>> processor = DocumentProcessor(
+            ...     image_tag_prefix="![image](",
+            ...     image_tag_suffix=")"
+            ... )
         """
         self._config = config or {}
         self._ocr_engine = ocr_engine
@@ -95,6 +124,17 @@ class DocumentProcessor:
 
         # Handler registry
         self._handler_registry: Optional[Dict[str, Callable]] = None
+
+        # Create instance-specific ImageProcessor
+        self._image_processor = self._create_image_processor(
+            directory=image_directory,
+            tag_prefix=image_tag_prefix,
+            tag_suffix=image_tag_suffix
+        )
+
+        # Add image_processor to config for handlers to access
+        if isinstance(self._config, dict):
+            self._config["image_processor"] = self._image_processor
 
     # =========================================================================
     # Public Properties
@@ -111,6 +151,30 @@ class DocumentProcessor:
     def config(self) -> Optional[Union[Dict[str, Any], Any]]:
         """Current configuration."""
         return self._config
+
+    @property
+    def image_config(self) -> Dict[str, Any]:
+        """
+        Current image processor configuration.
+
+        Returns:
+            Dictionary containing:
+            - directory_path: Image save directory
+            - tag_prefix: Image tag prefix
+            - tag_suffix: Image tag suffix
+            - naming_strategy: File naming strategy
+        """
+        return {
+            "directory_path": self._image_processor.config.directory_path,
+            "tag_prefix": self._image_processor.config.tag_prefix,
+            "tag_suffix": self._image_processor.config.tag_suffix,
+            "naming_strategy": self._image_processor.config.naming_strategy.value,
+        }
+
+    @property
+    def image_processor(self) -> Any:
+        """Current ImageProcessor instance for this DocumentProcessor."""
+        return self._image_processor
 
     @property
     def ocr_engine(self) -> Optional[Any]:
@@ -312,6 +376,34 @@ class DocumentProcessor:
     # Private Methods
     # =========================================================================
 
+    def _create_image_processor(
+        self,
+        directory: Optional[str] = None,
+        tag_prefix: Optional[str] = None,
+        tag_suffix: Optional[str] = None
+    ) -> Any:
+        """
+        Create an ImageProcessor instance for this DocumentProcessor.
+
+        This creates an instance-specific ImageProcessor that will be
+        passed to handlers via config.
+
+        Args:
+            directory: Image save directory
+            tag_prefix: Image tag prefix
+            tag_suffix: Image tag suffix
+
+        Returns:
+            ImageProcessor instance
+        """
+        from libs.core.functions.img_processor import create_image_processor
+
+        return create_image_processor(
+            directory_path=directory,
+            tag_prefix=tag_prefix,
+            tag_suffix=tag_suffix
+        )
+
     def _build_supported_extensions(self) -> List[str]:
         """Build list of supported extensions."""
         extensions = list(
@@ -329,74 +421,86 @@ class DocumentProcessor:
         return sorted(extensions)
 
     def _get_handler_registry(self) -> Dict[str, Callable]:
-        """Build and cache handler registry."""
+        """Build and cache handler registry.
+        
+        All handlers are class-based, inheriting from BaseHandler.
+        """
         if self._handler_registry is not None:
             return self._handler_registry
 
         self._handler_registry = {}
 
-        # PDF handlers
+        # PDF handler
         try:
-            from libs.core.processor.pdf_handler import extract_text_from_pdf
-            self._handler_registry['pdf'] = extract_text_from_pdf
+            from libs.core.processor.pdf_handler import PDFHandler
+            pdf_handler = PDFHandler(config=self._config, image_processor=self._image_processor)
+            self._handler_registry['pdf'] = pdf_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"PDF handler not available: {e}")
 
         # DOCX handler
         try:
-            from libs.core.processor.docx_handler import extract_text_from_docx
-            self._handler_registry['docx'] = extract_text_from_docx
+            from libs.core.processor.docx_handler import DOCXHandler
+            docx_handler = DOCXHandler(config=self._config, image_processor=self._image_processor)
+            self._handler_registry['docx'] = docx_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"DOCX handler not available: {e}")
 
         # DOC handler
         try:
-            from libs.core.processor.doc_handler import extract_text_from_doc
-            self._handler_registry['doc'] = extract_text_from_doc
+            from libs.core.processor.doc_handler import DOCHandler
+            doc_handler = DOCHandler(config=self._config, image_processor=self._image_processor)
+            self._handler_registry['doc'] = doc_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"DOC handler not available: {e}")
 
         # PPT/PPTX handler
         try:
-            from libs.core.processor.ppt_handler import extract_text_from_ppt
-            self._handler_registry['ppt'] = extract_text_from_ppt
-            self._handler_registry['pptx'] = extract_text_from_ppt
+            from libs.core.processor.ppt_handler import PPTHandler
+            ppt_handler = PPTHandler(config=self._config, image_processor=self._image_processor)
+            self._handler_registry['ppt'] = ppt_handler.extract_text
+            self._handler_registry['pptx'] = ppt_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"PPT handler not available: {e}")
 
-        # Excel handlers
+        # Excel handler
         try:
-            from libs.core.processor.excel_handler import extract_text_from_excel
-            self._handler_registry['xlsx'] = extract_text_from_excel
-            self._handler_registry['xls'] = extract_text_from_excel
+            from libs.core.processor.excel_handler import ExcelHandler
+            excel_handler = ExcelHandler(config=self._config, image_processor=self._image_processor)
+            self._handler_registry['xlsx'] = excel_handler.extract_text
+            self._handler_registry['xls'] = excel_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"Excel handler not available: {e}")
 
         # CSV/TSV handler
         try:
-            from libs.core.processor.csv_handler import extract_text_from_csv
-            self._handler_registry['csv'] = extract_text_from_csv
-            self._handler_registry['tsv'] = extract_text_from_csv
+            from libs.core.processor.csv_handler import CSVHandler
+            csv_handler = CSVHandler(config=self._config, image_processor=self._image_processor)
+            self._handler_registry['csv'] = csv_handler.extract_text
+            self._handler_registry['tsv'] = csv_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"CSV handler not available: {e}")
 
         # HWP handler
         try:
-            from libs.core.processor.hwp_processor import extract_text_from_hwp
-            self._handler_registry['hwp'] = extract_text_from_hwp
+            from libs.core.processor.hwp_handler import HWPHandler
+            hwp_handler = HWPHandler(config=self._config, image_processor=self._image_processor)
+            self._handler_registry['hwp'] = hwp_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"HWP handler not available: {e}")
 
         # HWPX handler
         try:
-            from libs.core.processor.hwpx_processor import extract_text_from_hwpx
-            self._handler_registry['hwpx'] = extract_text_from_hwpx
+            from libs.core.processor.hwps_handler import HWPXHandler
+            hwpx_handler = HWPXHandler(config=self._config, image_processor=self._image_processor)
+            self._handler_registry['hwpx'] = hwpx_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"HWPX handler not available: {e}")
 
         # Text handler (for text, code, config, script, log, web types)
         try:
-            from libs.core.processor.text_handler import extract_text_from_text_file
+            from libs.core.processor.text_handler import TextHandler
+            text_handler = TextHandler(config=self._config, image_processor=self._image_processor)
             text_extensions = (
                 self.TEXT_TYPES |
                 self.CODE_TYPES |
@@ -406,7 +510,7 @@ class DocumentProcessor:
                 self.WEB_TYPES
             )
             for ext in text_extensions:
-                self._handler_registry[ext] = extract_text_from_text_file
+                self._handler_registry[ext] = text_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"Text handler not available: {e}")
 
@@ -428,8 +532,11 @@ class DocumentProcessor:
         """
         Invoke the appropriate handler based on extension.
 
+        All handlers are class-based and use the same signature:
+        handler(file_path, extract_metadata=..., **kwargs)
+
         Args:
-            handler: Handler function
+            handler: Handler method (bound method from Handler class)
             file_path: File path
             ext: File extension
             extract_metadata: Whether to extract metadata
@@ -444,7 +551,7 @@ class DocumentProcessor:
         # Determine if this is a code file
         is_code = ext in self.CODE_TYPES
 
-        # Text-based files use different signature
+        # Text-based files include file_type and is_code in kwargs
         text_extensions = (
             self.TEXT_TYPES |
             self.CODE_TYPES |
@@ -455,11 +562,10 @@ class DocumentProcessor:
         )
 
         if ext in text_extensions:
-            # text_handler signature: (file_path, file_type, encodings, is_code)
-            return handler(file_path, ext, is_code=is_code)
+            return handler(file_path, extract_metadata=extract_metadata, file_type=ext, is_code=is_code, **kwargs)
 
-        # Standard handler signature: (file_path, config, extract_default_metadata)
-        return handler(file_path, self._config, extract_default_metadata=extract_metadata)
+        # All other handlers use standard signature
+        return handler(file_path, extract_metadata=extract_metadata, **kwargs)
 
     # =========================================================================
     # Context Manager Support
@@ -490,6 +596,10 @@ class DocumentProcessor:
 def create_processor(
     config: Optional[Union[Dict[str, Any], Any]] = None,
     ocr_engine: Optional[Any] = None,
+    *,
+    image_directory: Optional[str] = None,
+    image_tag_prefix: Optional[str] = None,
+    image_tag_suffix: Optional[str] = None,
     **kwargs
 ) -> DocumentProcessor:
     """
@@ -498,6 +608,9 @@ def create_processor(
     Args:
         config: Configuration dictionary or ConfigComposer instance
         ocr_engine: OCR engine instance (BaseOCR subclass)
+        image_directory: Directory path for saving extracted images
+        image_tag_prefix: Prefix for image tags (default: "[Image:")
+        image_tag_suffix: Suffix for image tags (default: "]")
         **kwargs: Additional configuration options
 
     Returns:
@@ -511,8 +624,22 @@ def create_processor(
         >>> from libs.ocr.ocr_engine import OpenAIOCR
         >>> ocr = OpenAIOCR(api_key="sk-...", model="gpt-4o")
         >>> processor = create_processor(ocr_engine=ocr)
+
+        # With custom image tags (HTML format)
+        >>> processor = create_processor(
+        ...     image_directory="output/images",
+        ...     image_tag_prefix="<img src='",
+        ...     image_tag_suffix="'/>"
+        ... )
     """
-    return DocumentProcessor(config=config, ocr_engine=ocr_engine, **kwargs)
+    return DocumentProcessor(
+        config=config,
+        ocr_engine=ocr_engine,
+        image_directory=image_directory,
+        image_tag_prefix=image_tag_prefix,
+        image_tag_suffix=image_tag_suffix,
+        **kwargs
+    )
 
 
 __all__ = [

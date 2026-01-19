@@ -21,12 +21,6 @@ import matplotlib.pyplot as plt
 
 from libs.core.functions.img_processor import ImageProcessor
 
-_image_processor = ImageProcessor(
-    directory_path="temp/images",
-    tag_prefix="[image:",
-    tag_suffix="]"
-)
-
 logger = logging.getLogger("document-processor")
 
 
@@ -625,7 +619,11 @@ class ChartHelper:
         return ChartHelper.format_chart_data_as_table(chart_data)
 
     @staticmethod
-    def render_chart_to_image(chart_data: Dict[str, Any], processed_images: Set[str] = None) -> Optional[str]:
+    def render_chart_to_image(
+        chart_data: Dict[str, Any],
+        processed_images: Set[str],
+        image_processor: ImageProcessor
+    ) -> Optional[str]:
         """
         차트 데이터를 matplotlib로 이미지로 렌더링하고 로컬에 저장합니다.
 
@@ -634,6 +632,7 @@ class ChartHelper:
         Args:
             chart_data: 차트 정보 딕셔너리
             processed_images: 이미 처리된 이미지 해시 집합
+            image_processor: 이미지 프로세서 인스턴스
 
         Returns:
             [chart] 태그로 감싸진 이미지 참조 문자열, 실패 시 None
@@ -715,7 +714,7 @@ class ChartHelper:
             if processed_images is None:
                 processed_images = set()
 
-            image_tag = _image_processor.save_image(img_data)
+            image_tag = image_processor.save_image(img_data)
 
             if image_tag:
                 result_parts = ["[chart]"]
@@ -736,7 +735,11 @@ class ChartHelper:
             return None
 
     @staticmethod
-    def process_chart(chart_data: Dict[str, Any], processed_images: Set[str] = None) -> str:
+    def process_chart(
+        chart_data: Dict[str, Any],
+        processed_images: Set[str],
+        image_processor: ImageProcessor
+    ) -> str:
         """
         차트를 처리합니다.
 
@@ -746,6 +749,7 @@ class ChartHelper:
         Args:
             chart_data: 차트 정보 딕셔너리
             processed_images: 이미 처리된 이미지 해시 집합
+            image_processor: 이미지 프로세서 인스턴스
 
         Returns:
             [chart]...[/chart] 형태의 문자열
@@ -757,7 +761,7 @@ class ChartHelper:
             return table_result
 
         # 2순위: 이미지로 렌더링
-        image_result = ChartHelper.render_chart_to_image(chart_data, processed_images)
+        image_result = ChartHelper.render_chart_to_image(chart_data, processed_images, image_processor)
         if image_result:
             logger.debug("Chart rendered to image successfully")
             return image_result

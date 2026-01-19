@@ -27,13 +27,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from libs.core.functions.img_processor import ImageProcessor
 
-# 모듈 레벨 이미지 프로세서
-_image_processor = ImageProcessor(
-    directory_path="temp/images",
-    tag_prefix="[image:",
-    tag_suffix="]"
-)
-
 logger = logging.getLogger("document-processor")
 
 
@@ -89,12 +82,18 @@ class RTFBinaryProcessor:
     로컬에 저장하여 이미지 태그로 변환합니다.
     """
 
-    def __init__(self, processed_images: Optional[Set[str]] = None):
+    def __init__(
+        self,
+        processed_images: Optional[Set[str]] = None,
+        image_processor: ImageProcessor = None
+    ):
         """
         Args:
             processed_images: 이미 처리된 이미지 해시 집합 (중복 방지)
+            image_processor: 이미지 처리기
         """
         self.processed_images = processed_images if processed_images is not None else set()
+        self.image_processor = image_processor
         self.binary_regions: List[RTFBinaryRegion] = []
         self.image_tags: Dict[int, str] = {}
 
@@ -412,7 +411,7 @@ class RTFBinaryProcessor:
             supported_formats = {'jpeg', 'png', 'gif', 'bmp'}
 
             if region.image_format in supported_formats:
-                image_tag = _image_processor.save_image(region.image_data)
+                image_tag = self.image_processor.save_image(region.image_data)
 
                 if image_tag:
                     self.image_tags[region.start_pos] = f"\n{image_tag}\n"
@@ -483,7 +482,8 @@ class RTFBinaryProcessor:
 
 def preprocess_rtf_binary(
     content: bytes,
-    processed_images: Optional[Set[str]] = None
+    processed_images: Optional[Set[str]] = None,
+    image_processor: ImageProcessor = None
 ) -> Tuple[bytes, Dict[int, str]]:
     """
     RTF 콘텐츠에서 바이너리 데이터를 전처리합니다.
@@ -497,6 +497,7 @@ def preprocess_rtf_binary(
     Args:
         content: RTF 파일 바이너리 콘텐츠
         processed_images: 처리된 이미지 해시 집합 (optional)
+        image_processor: 이미지 처리기
 
     Returns:
         (정제된 콘텐츠, 위치->이미지태그 딕셔너리) 튜플
@@ -507,14 +508,15 @@ def preprocess_rtf_binary(
         >>> clean_content, image_tags = preprocess_rtf_binary(raw_content)
         >>> # 이후 RTF 파서에 clean_content 전달
     """
-    processor = RTFBinaryProcessor(processed_images)
+    processor = RTFBinaryProcessor(processed_images, image_processor)
     result = processor.process(content)
     return result.clean_content, result.image_tags
 
 
 def extract_rtf_images(
     content: bytes,
-    processed_images: Optional[Set[str]] = None
+    processed_images: Optional[Set[str]] = None,
+    image_processor: ImageProcessor = None
 ) -> List[str]:
     """
     RTF 콘텐츠에서 모든 이미지를 추출하여 로컬에 저장합니다.
@@ -522,11 +524,12 @@ def extract_rtf_images(
     Args:
         content: RTF 파일 바이너리 콘텐츠
         processed_images: 처리된 이미지 해시 집합 (optional)
+        image_processor: 이미지 처리기
 
     Returns:
         이미지 태그 리스트 (예: ["[image:bucket/uploads/hash.png]", ...])
     """
-    processor = RTFBinaryProcessor(processed_images)
+    processor = RTFBinaryProcessor(processed_images, image_processor)
     result = processor.process(content)
 
     # 위치순으로 정렬된 이미지 태그 반환

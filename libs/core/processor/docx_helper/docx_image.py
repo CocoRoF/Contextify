@@ -15,20 +15,14 @@ from docx.oxml.ns import qn
 from libs.core.functions.img_processor import ImageProcessor
 from libs.core.processor.docx_helper.docx_constants import ElementType, NAMESPACES
 
-# 모듈 레벨 이미지 프로세서 (기본 설정)
-_image_processor = ImageProcessor(
-    directory_path="temp/images",
-    tag_prefix="[image:",
-    tag_suffix="]"
-)
-
 logger = logging.getLogger("document-processor")
 
 
 def extract_image_from_drawing(
     graphic_data,
     doc: Document,
-    processed_images: Set[str]
+    processed_images: Set[str],
+    image_processor: Optional[ImageProcessor] = None
 ) -> Tuple[str, Optional[ElementType]]:
     """
     Drawing에서 이미지를 추출합니다.
@@ -37,10 +31,14 @@ def extract_image_from_drawing(
         graphic_data: graphicData XML 요소
         doc: python-docx Document 객체
         processed_images: 처리된 이미지 경로 집합 (중복 방지)
+        image_processor: ImageProcessor 인스턴스
 
     Returns:
         (content, element_type) 튜플
     """
+    if image_processor is None:
+        image_processor = ImageProcessor()
+    
     try:
         # blip 요소 찾기 (이미지 참조)
         blip = graphic_data.find('.//a:blip', NAMESPACES)
@@ -66,7 +64,7 @@ def extract_image_from_drawing(
                 image_data = rel.target_part.blob
 
                 # 로컬에 저장
-                image_tag = _image_processor.save_image(image_data, processed_images=processed_images)
+                image_tag = image_processor.save_image(image_data, processed_images=processed_images)
 
                 if image_tag:
                     return f"\n{image_tag}\n", ElementType.IMAGE
@@ -85,7 +83,8 @@ def extract_image_from_drawing(
 def process_pict_element(
     pict_elem,
     doc: Document,
-    processed_images: Set[str]
+    processed_images: Set[str],
+    image_processor: Optional[ImageProcessor] = None
 ) -> str:
     """
     레거시 VML pict 요소를 처리합니다.
@@ -94,10 +93,14 @@ def process_pict_element(
         pict_elem: pict XML 요소
         doc: python-docx Document 객체
         processed_images: 처리된 이미지 경로 집합 (중복 방지)
+        image_processor: ImageProcessor 인스턴스
 
     Returns:
         이미지 마크업 문자열
     """
+    if image_processor is None:
+        image_processor = ImageProcessor()
+    
     try:
         # VML imagedata 찾기
         ns_v = 'urn:schemas-microsoft-com:vml'
@@ -115,7 +118,7 @@ def process_pict_element(
             rel = doc.part.rels.get(rId)
             if rel and hasattr(rel, 'target_part') and hasattr(rel.target_part, 'blob'):
                 image_data = rel.target_part.blob
-                image_tag = _image_processor.save_image(image_data, processed_images=processed_images)
+                image_tag = image_processor.save_image(image_data, processed_images=processed_images)
                 if image_tag:
                     return f"\n{image_tag}\n"
         except Exception:
