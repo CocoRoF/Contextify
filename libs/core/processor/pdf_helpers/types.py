@@ -69,6 +69,8 @@ class PDFConfig:
     # Page border detection settings
     BORDER_MARGIN = 30.0        # Maximum distance from page edge
     BORDER_LENGTH_RATIO = 0.8   # Minimum border length ratio relative to page size
+    PAGE_BORDER_MARGIN = 0.1    # Page border margin ratio relative to page size
+    PAGE_SPANNING_RATIO = 0.85  # Ratio to determine if line spans the page
     
     # Graphic region detection settings
     GRAPHIC_CURVE_RATIO_THRESHOLD = 0.3   # Curve ratio threshold
@@ -87,6 +89,10 @@ class PDFConfig:
     TABLE_MAX_CELL_TEXT_LENGTH = 300      # Maximum text length per cell
     TABLE_EXTREME_CELL_LENGTH = 800       # Extremely long cell threshold
     TABLE_MAX_LONG_CELLS_RATIO = 0.4      # Maximum long cell ratio
+    
+    # Annotation detection settings
+    ANNOTATION_Y_MARGIN = 30.0            # pt - Search range below table for annotations
+    ANNOTATION_PATTERNS = ['주)', '주 )', '※', '*', '†', '‡', '¹', '²', '³']
 
 
 # ============================================================================

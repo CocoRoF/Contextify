@@ -88,11 +88,13 @@ class ExcelHandler(BaseHandler):
         """
         file_path = current_file.get("file_path", "unknown")
         ext = current_file.get("file_extension", os.path.splitext(file_path)[1]).lower()
+        # Normalize extension (remove leading dot if present)
+        ext = ext.lstrip('.')
         self.logger.info(f"Excel processing: {file_path}, ext: {ext}")
 
-        if ext == '.xlsx':
+        if ext == 'xlsx':
             return self._extract_xlsx(current_file, extract_metadata)
-        elif ext == '.xls':
+        elif ext == 'xls':
             return self._extract_xls(current_file, extract_metadata)
         else:
             raise ValueError(f"Unsupported Excel format: {ext}")

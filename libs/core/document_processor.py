@@ -56,6 +56,155 @@ class CurrentFile(TypedDict, total=False):
     file_stream: io.BytesIO
     file_size: int
 
+
+class ChunkResult:
+    """
+    Container class for extracted text chunks.
+    
+    Provides convenient access to chunks and utility methods for saving.
+    
+    Attributes:
+        chunks: List of text chunks
+        source_file: Original source file path (if available)
+        
+    Example:
+        >>> result = processor.extract_chunks("document.pdf")
+        >>> print(len(result.chunks))
+        >>> result.save_to_md("output/chunks")
+    """
+    
+    def __init__(
+        self,
+        chunks: List[str],
+        source_file: Optional[str] = None
+    ):
+        """
+        Initialize ChunkResult.
+        
+        Args:
+            chunks: List of text chunks
+            source_file: Original source file path
+        """
+        self._chunks = chunks
+        self._source_file = source_file
+    
+    @property
+    def chunks(self) -> List[str]:
+        """Return list of text chunks."""
+        return self._chunks
+    
+    @property
+    def source_file(self) -> Optional[str]:
+        """Return original source file path."""
+        return self._source_file
+    
+    def save_to_md(
+        self,
+        path: Optional[Union[str, Path]] = None,
+        *,
+        filename: str = "chunks.md",
+        separator: str = "---",
+        include_metadata: bool = True
+    ) -> str:
+        """
+        Save all chunks to a single markdown file with separators.
+        
+        Args:
+            path: File path or directory to save (default: current directory)
+                  - If path ends with .md, uses it as the file path
+                  - Otherwise, treats as directory and uses filename parameter
+            filename: Filename to use when path is a directory (default: "chunks.md")
+            separator: Separator string between chunks (default: "---")
+            include_metadata: Whether to include metadata header
+            
+        Returns:
+            Saved file path
+            
+        Example:
+            >>> result = processor.extract_chunks("document.pdf")
+            >>> saved_path = result.save_to_md()
+            >>> # Creates: ./chunks.md
+            
+            >>> result.save_to_md("output/my_chunks.md")
+            >>> # Creates: output/my_chunks.md
+            
+            >>> result.save_to_md("output/", filename="document_chunks.md")
+            >>> # Creates: output/document_chunks.md
+        """
+        # Determine save path
+        if path is None:
+            file_path = Path.cwd() / filename
+        else:
+            path = Path(path)
+            if path.suffix.lower() == ".md":
+                file_path = path
+            else:
+                # Treat as directory
+                path.mkdir(parents=True, exist_ok=True)
+                file_path = path / filename
+        
+        # Ensure parent directory exists
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Handle duplicate filename
+        if file_path.exists():
+            base = file_path.stem
+            suffix = file_path.suffix
+            parent = file_path.parent
+            counter = 1
+            while file_path.exists():
+                file_path = parent / f"{base}_{counter}{suffix}"
+                counter += 1
+        
+        total_chunks = len(self._chunks)
+        content_parts = []
+        
+        # Add metadata header
+        if include_metadata:
+            content_parts.append("---")
+            content_parts.append(f"total_chunks: {total_chunks}")
+            if self._source_file:
+                content_parts.append(f"source_file: {self._source_file}")
+            content_parts.append("---")
+            content_parts.append("")
+        
+        # Add each chunk with separator
+        for idx, chunk in enumerate(self._chunks, start=1):
+            content_parts.append(f"## Chunk {idx}/{total_chunks}")
+            content_parts.append("")
+            content_parts.append(chunk)
+            content_parts.append("")
+            
+            # Add separator between chunks (not after the last one)
+            if idx < total_chunks:
+                content_parts.append(separator)
+                content_parts.append("")
+        
+        # Write file
+        file_path.write_text("\n".join(content_parts), encoding="utf-8")
+        
+        logger.info(f"Saved {total_chunks} chunks to {file_path}")
+        return str(file_path)
+    
+    def __len__(self) -> int:
+        """Return number of chunks."""
+        return len(self._chunks)
+    
+    def __iter__(self):
+        """Iterate over chunks."""
+        return iter(self._chunks)
+    
+    def __getitem__(self, index: int) -> str:
+        """Get chunk by index."""
+        return self._chunks[index]
+    
+    def __repr__(self) -> str:
+        return f"ChunkResult(chunks={len(self._chunks)}, source_file={self._source_file!r})"
+    
+    def __str__(self) -> str:
+        return f"ChunkResult with {len(self._chunks)} chunks"
+
+
 class DocumentProcessor:
     """
     Contextify Main Document Processing Class
@@ -332,11 +481,13 @@ class DocumentProcessor:
         chunk_overlap: int = 200,
         preserve_tables: bool = True,
         **kwargs
-    ) -> List[str]:
+    ) -> ChunkResult:
         """
         Extract text from a file and split into chunks in one step.
 
         This is a convenience method that combines extract_text() and chunk_text().
+        Returns a ChunkResult object that provides convenient access to chunks
+        and utility methods for saving.
 
         Args:
             file_path: File path
@@ -349,7 +500,9 @@ class DocumentProcessor:
             **kwargs: Additional handler-specific options
 
         Returns:
-            List of chunk strings
+            ChunkResult object containing chunks with utility methods
+            - .chunks: Access list of chunk strings
+            - .save_to_md(path): Save chunks as markdown files
 
         Raises:
             FileNotFoundError: If file cannot be found
@@ -357,9 +510,11 @@ class DocumentProcessor:
 
         Example:
             >>> processor = DocumentProcessor()
-            >>> chunks = processor.extract_chunks("document.pdf", chunk_size=1000)
-            >>> for i, chunk in enumerate(chunks):
+            >>> result = processor.extract_chunks("document.pdf", chunk_size=1000)
+            >>> for i, chunk in enumerate(result.chunks):
             ...     print(f"Chunk {i+1}: {len(chunk)} chars")
+            >>> # Save chunks to markdown files
+            >>> result.save_to_md("output/chunks")
         """
         # Extract text
         text = self.extract_text(
@@ -383,7 +538,11 @@ class DocumentProcessor:
             preserve_tables=preserve_tables
         )
 
-        return chunks
+        # Return ChunkResult with source file info
+        return ChunkResult(
+            chunks=chunks,
+            source_file=str(file_path)
+        )
 
     # =========================================================================
     # Public Methods - Utilities
@@ -773,5 +932,6 @@ def create_processor(
 __all__ = [
     "DocumentProcessor",
     "CurrentFile",
+    "ChunkResult",
     "create_processor",
 ]
