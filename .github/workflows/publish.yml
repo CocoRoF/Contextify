@@ -6,6 +6,15 @@ on:
       - deploy
     paths:
       - 'pyproject.toml'  # pyproject.toml이 변경될 때만
+  
+  # 수동 실행 가능
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: 'Force publish without version check'
+        required: false
+        default: 'false'
+        type: boolean
 
 jobs:
   check-version:
@@ -50,7 +59,7 @@ jobs:
 
   publish:
     needs: check-version
-    if: needs.check-version.outputs.version_changed == 'true'
+    if: needs.check-version.outputs.version_changed == 'true' || github.event.inputs.force_publish == 'true'
     runs-on: ubuntu-latest
     
     permissions:
