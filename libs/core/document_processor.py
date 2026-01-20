@@ -62,36 +62,77 @@ class ChunkResult:
     Container class for extracted text chunks.
     
     Provides convenient access to chunks and utility methods for saving.
+    Supports both simple text chunks and chunks with position metadata.
     
     Attributes:
         chunks: List of text chunks
+        chunks_with_metadata: List of chunk dictionaries with position metadata
         source_file: Original source file path (if available)
+        has_metadata: Whether position metadata is available
         
     Example:
         >>> result = processor.extract_chunks("document.pdf")
         >>> print(len(result.chunks))
         >>> result.save_to_md("output/chunks")
+        >>> 
+        >>> # Access position metadata (if available)
+        >>> if result.has_metadata:
+        ...     for chunk_data in result.chunks_with_metadata:
+        ...         print(f"Page {chunk_data['page_number']}: {chunk_data['text'][:50]}")
     """
     
     def __init__(
         self,
-        chunks: List[str],
+        chunks: Union[List[str], List[Dict[str, Any]]],
         source_file: Optional[str] = None
     ):
         """
         Initialize ChunkResult.
         
         Args:
-            chunks: List of text chunks
+            chunks: List of text chunks or list of chunk dictionaries with metadata
             source_file: Original source file path
         """
-        self._chunks = chunks
         self._source_file = source_file
+        
+        # Detect if chunks contain metadata (list of dicts with 'text' key)
+        if chunks and isinstance(chunks[0], dict) and 'text' in chunks[0]:
+            self._chunks_with_metadata = chunks
+            self._chunks = [c['text'] for c in chunks]
+            self._has_metadata = True
+        else:
+            self._chunks = chunks if chunks else []
+            self._chunks_with_metadata = None
+            self._has_metadata = False
     
     @property
     def chunks(self) -> List[str]:
         """Return list of text chunks."""
         return self._chunks
+    
+    @property
+    def chunks_with_metadata(self) -> Optional[List[Dict[str, Any]]]:
+        """
+        Return list of chunks with position metadata.
+        
+        Each chunk dictionary contains:
+            - text: Chunk text content
+            - page_number: Page number where chunk starts
+            - line_start: Starting line number
+            - line_end: Ending line number
+            - global_start: Global character start position
+            - global_end: Global character end position
+            - chunk_index: Index of this chunk
+            
+        Returns:
+            List of chunk dictionaries if metadata available, None otherwise
+        """
+        return self._chunks_with_metadata
+    
+    @property
+    def has_metadata(self) -> bool:
+        """Return whether position metadata is available."""
+        return self._has_metadata
     
     @property
     def source_file(self) -> Optional[str]:
@@ -244,6 +285,10 @@ class DocumentProcessor:
         image_directory: Optional[str] = None,
         image_tag_prefix: Optional[str] = None,
         image_tag_suffix: Optional[str] = None,
+        page_tag_prefix: Optional[str] = None,
+        page_tag_suffix: Optional[str] = None,
+        slide_tag_prefix: Optional[str] = None,
+        slide_tag_suffix: Optional[str] = None,
         **kwargs
     ):
         """
@@ -265,23 +310,37 @@ class DocumentProcessor:
             image_tag_suffix: Suffix for image tags in extracted text
                    - Default: "]"
                    - Example: "'/>" for HTML format
+            page_tag_prefix: Prefix for page number tags in extracted text
+                   - Default: "[Page Number: "
+                   - Example: "<page>" for XML format
+            page_tag_suffix: Suffix for page number tags in extracted text
+                   - Default: "]"
+                   - Example: "</page>" for XML format
+            slide_tag_prefix: Prefix for slide number tags (presentations)
+                   - Default: "[Slide Number: "
+            slide_tag_suffix: Suffix for slide number tags
+                   - Default: "]"
             **kwargs: Additional configuration options
 
         Example:
-            >>> # Default image tags: [Image:path/to/image.png]
+            >>> # Default tags: [Image:...], [Page Number: 1]
             >>> processor = DocumentProcessor()
 
-            >>> # Custom HTML image tags: <img src='path/to/image.png'/>
+            >>> # Custom HTML format
             >>> processor = DocumentProcessor(
             ...     image_directory="output/images",
             ...     image_tag_prefix="<img src='",
-            ...     image_tag_suffix="'/>"
+            ...     image_tag_suffix="'/>",
+            ...     page_tag_prefix="<page>",
+            ...     page_tag_suffix="</page>"
             ... )
 
-            >>> # Markdown image tags: ![image](path/to/image.png)
+            >>> # Markdown format
             >>> processor = DocumentProcessor(
             ...     image_tag_prefix="![image](",
-            ...     image_tag_suffix=")"
+            ...     image_tag_suffix=")",
+            ...     page_tag_prefix="<!-- Page ",
+            ...     page_tag_suffix=" -->"
             ... )
         """
         self._config = config or {}
@@ -305,9 +364,18 @@ class DocumentProcessor:
             tag_suffix=image_tag_suffix
         )
 
-        # Add image_processor to config for handlers to access
+        # Create instance-specific PageTagProcessor
+        self._page_tag_processor = self._create_page_tag_processor(
+            page_tag_prefix=page_tag_prefix,
+            page_tag_suffix=page_tag_suffix,
+            slide_tag_prefix=slide_tag_prefix,
+            slide_tag_suffix=slide_tag_suffix
+        )
+
+        # Add processors to config for handlers to access
         if isinstance(self._config, dict):
             self._config["image_processor"] = self._image_processor
+            self._config["page_tag_processor"] = self._page_tag_processor
 
     # =========================================================================
     # Public Properties
@@ -350,14 +418,49 @@ class DocumentProcessor:
         return self._image_processor
 
     @property
+    def page_tag_config(self) -> Dict[str, Any]:
+        """
+        Current page tag processor configuration.
+
+        Returns:
+            Dictionary containing:
+            - tag_prefix: Page tag prefix
+            - tag_suffix: Page tag suffix
+            - slide_prefix: Slide tag prefix
+            - slide_suffix: Slide tag suffix
+            - sheet_prefix: Sheet tag prefix
+            - sheet_suffix: Sheet tag suffix
+        """
+        return {
+            "tag_prefix": self._page_tag_processor.config.tag_prefix,
+            "tag_suffix": self._page_tag_processor.config.tag_suffix,
+            "slide_prefix": self._page_tag_processor.config.slide_prefix,
+            "slide_suffix": self._page_tag_processor.config.slide_suffix,
+            "sheet_prefix": self._page_tag_processor.config.sheet_prefix,
+            "sheet_suffix": self._page_tag_processor.config.sheet_suffix,
+        }
+
+    @property
+    def page_tag_processor(self) -> Any:
+        """Current PageTagProcessor instance for this DocumentProcessor."""
+        return self._page_tag_processor
+
+    @property
     def ocr_engine(self) -> Optional[Any]:
         """Current OCR engine instance."""
         return self._ocr_engine
 
     @ocr_engine.setter
     def ocr_engine(self, engine: Optional[Any]) -> None:
-        """Set OCR engine instance."""
+        """
+        Set OCR engine instance.
+        
+        When OCR engine is changed, the handler registry is invalidated
+        to ensure ImageFileHandler gets the updated OCR engine.
+        """
         self._ocr_engine = engine
+        # Invalidate handler registry so it gets rebuilt with new OCR engine
+        self._handler_registry = None
 
     # =========================================================================
     # Public Methods - Text Extraction
@@ -420,7 +523,10 @@ class DocumentProcessor:
         # Apply OCR processing if enabled and ocr_engine is available
         if ocr_processing and self._ocr_engine is not None:
             self._logger.info(f"Applying OCR processing with {self._ocr_engine}")
-            text = self._ocr_engine.process_text(text)
+            # Get image pattern from ImageProcessor to pass to OCR engine
+            import re
+            image_pattern = re.compile(self._image_processor.get_pattern_string())
+            text = self._ocr_engine.process_text(text, image_pattern=image_pattern)
         elif ocr_processing and self._ocr_engine is None:
             self._logger.warning("OCR processing requested but no ocr_engine is configured. Skipping OCR.")
 
@@ -438,7 +544,8 @@ class DocumentProcessor:
         chunk_overlap: int = 200,
         file_extension: Optional[str] = None,
         preserve_tables: bool = True,
-    ) -> List[str]:
+        include_position_metadata: bool = False,
+    ) -> Union[List[str], List[Dict[str, Any]]]:
         """
         Split text into chunks.
 
@@ -448,11 +555,14 @@ class DocumentProcessor:
             chunk_overlap: Overlap size between chunks
             file_extension: File extension (used for table-based file processing)
             preserve_tables: Whether to preserve table structure
+            include_position_metadata: Whether to include position metadata
+                - True: Returns list of dicts with text, page_number, line_start, etc.
+                - False: Returns list of text strings (default)
 
         Returns:
-            List of chunk strings
+            List of chunk strings or list of chunk dictionaries with metadata
         """
-        from libs.chunking.chunking import split_text_preserving_html_blocks
+        from libs.chunking.chunking import create_chunks
 
         if not text or not text.strip():
             return [""]
@@ -460,15 +570,17 @@ class DocumentProcessor:
         # Use force_chunking to disable table protection if preserve_tables is False
         force_chunking = not preserve_tables
 
-        chunks = split_text_preserving_html_blocks(
+        result = create_chunks(
             text=text,
+            file_extension=file_extension or "",
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
-            file_extension=file_extension,
-            force_chunking=force_chunking
+            force_chunking=force_chunking,
+            include_position_metadata=include_position_metadata,
+            page_tag_processor=self._page_tag_processor
         )
 
-        return chunks
+        return result
 
     def extract_chunks(
         self,
@@ -480,6 +592,7 @@ class DocumentProcessor:
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
         preserve_tables: bool = True,
+        include_position_metadata: bool = False,
         **kwargs
     ) -> ChunkResult:
         """
@@ -497,11 +610,16 @@ class DocumentProcessor:
             chunk_size: Chunk size (character count)
             chunk_overlap: Overlap size between chunks
             preserve_tables: Whether to preserve table structure
+            include_position_metadata: Whether to include position metadata
+                - True: Each chunk includes page_number, line_start, line_end, etc.
+                - False: Standard text chunks only (default)
             **kwargs: Additional handler-specific options
 
         Returns:
             ChunkResult object containing chunks with utility methods
             - .chunks: Access list of chunk strings
+            - .chunks_with_metadata: Access chunks with position metadata (if enabled)
+            - .has_metadata: Check if position metadata is available
             - .save_to_md(path): Save chunks as markdown files
 
         Raises:
@@ -515,6 +633,12 @@ class DocumentProcessor:
             ...     print(f"Chunk {i+1}: {len(chunk)} chars")
             >>> # Save chunks to markdown files
             >>> result.save_to_md("output/chunks")
+            >>>
+            >>> # With position metadata
+            >>> result = processor.extract_chunks("doc.pdf", include_position_metadata=True)
+            >>> if result.has_metadata:
+            ...     for chunk_data in result.chunks_with_metadata:
+            ...         print(f"Page {chunk_data['page_number']}: lines {chunk_data['line_start']}-{chunk_data['line_end']}")
         """
         # Extract text
         text = self.extract_text(
@@ -535,7 +659,8 @@ class DocumentProcessor:
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             file_extension=file_extension,
-            preserve_tables=preserve_tables
+            preserve_tables=preserve_tables,
+            include_position_metadata=include_position_metadata
         )
 
         # Return ChunkResult with source file info
@@ -654,6 +779,37 @@ class DocumentProcessor:
             tag_suffix=tag_suffix
         )
 
+    def _create_page_tag_processor(
+        self,
+        page_tag_prefix: Optional[str] = None,
+        page_tag_suffix: Optional[str] = None,
+        slide_tag_prefix: Optional[str] = None,
+        slide_tag_suffix: Optional[str] = None
+    ) -> Any:
+        """
+        Create a PageTagProcessor instance for this DocumentProcessor.
+
+        This creates an instance-specific PageTagProcessor that will be
+        passed to handlers via config.
+
+        Args:
+            page_tag_prefix: Page tag prefix (default: "[Page Number: ")
+            page_tag_suffix: Page tag suffix (default: "]")
+            slide_tag_prefix: Slide tag prefix (default: "[Slide Number: ")
+            slide_tag_suffix: Slide tag suffix (default: "]")
+
+        Returns:
+            PageTagProcessor instance
+        """
+        from libs.core.functions.page_tag_processor import PageTagProcessor
+
+        return PageTagProcessor(
+            tag_prefix=page_tag_prefix,
+            tag_suffix=page_tag_suffix,
+            slide_prefix=slide_tag_prefix,
+            slide_suffix=slide_tag_suffix
+        )
+
     def _build_supported_extensions(self) -> List[str]:
         """Build list of supported extensions."""
         extensions = list(
@@ -683,7 +839,11 @@ class DocumentProcessor:
         # PDF handler
         try:
             from libs.core.processor.pdf_handler import PDFHandler
-            pdf_handler = PDFHandler(config=self._config, image_processor=self._image_processor)
+            pdf_handler = PDFHandler(
+                config=self._config,
+                image_processor=self._image_processor,
+                page_tag_processor=self._page_tag_processor
+            )
             self._handler_registry['pdf'] = pdf_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"PDF handler not available: {e}")
@@ -691,7 +851,11 @@ class DocumentProcessor:
         # DOCX handler
         try:
             from libs.core.processor.docx_handler import DOCXHandler
-            docx_handler = DOCXHandler(config=self._config, image_processor=self._image_processor)
+            docx_handler = DOCXHandler(
+                config=self._config,
+                image_processor=self._image_processor,
+                page_tag_processor=self._page_tag_processor
+            )
             self._handler_registry['docx'] = docx_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"DOCX handler not available: {e}")
@@ -699,7 +863,11 @@ class DocumentProcessor:
         # DOC handler
         try:
             from libs.core.processor.doc_handler import DOCHandler
-            doc_handler = DOCHandler(config=self._config, image_processor=self._image_processor)
+            doc_handler = DOCHandler(
+                config=self._config,
+                image_processor=self._image_processor,
+                page_tag_processor=self._page_tag_processor
+            )
             self._handler_registry['doc'] = doc_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"DOC handler not available: {e}")
@@ -707,7 +875,11 @@ class DocumentProcessor:
         # PPT/PPTX handler
         try:
             from libs.core.processor.ppt_handler import PPTHandler
-            ppt_handler = PPTHandler(config=self._config, image_processor=self._image_processor)
+            ppt_handler = PPTHandler(
+                config=self._config,
+                image_processor=self._image_processor,
+                page_tag_processor=self._page_tag_processor
+            )
             self._handler_registry['ppt'] = ppt_handler.extract_text
             self._handler_registry['pptx'] = ppt_handler.extract_text
         except ImportError as e:
@@ -716,7 +888,11 @@ class DocumentProcessor:
         # Excel handler
         try:
             from libs.core.processor.excel_handler import ExcelHandler
-            excel_handler = ExcelHandler(config=self._config, image_processor=self._image_processor)
+            excel_handler = ExcelHandler(
+                config=self._config,
+                image_processor=self._image_processor,
+                page_tag_processor=self._page_tag_processor
+            )
             self._handler_registry['xlsx'] = excel_handler.extract_text
             self._handler_registry['xls'] = excel_handler.extract_text
         except ImportError as e:
@@ -725,7 +901,11 @@ class DocumentProcessor:
         # CSV/TSV handler
         try:
             from libs.core.processor.csv_handler import CSVHandler
-            csv_handler = CSVHandler(config=self._config, image_processor=self._image_processor)
+            csv_handler = CSVHandler(
+                config=self._config,
+                image_processor=self._image_processor,
+                page_tag_processor=self._page_tag_processor
+            )
             self._handler_registry['csv'] = csv_handler.extract_text
             self._handler_registry['tsv'] = csv_handler.extract_text
         except ImportError as e:
@@ -734,7 +914,11 @@ class DocumentProcessor:
         # HWP handler
         try:
             from libs.core.processor.hwp_handler import HWPHandler
-            hwp_handler = HWPHandler(config=self._config, image_processor=self._image_processor)
+            hwp_handler = HWPHandler(
+                config=self._config,
+                image_processor=self._image_processor,
+                page_tag_processor=self._page_tag_processor
+            )
             self._handler_registry['hwp'] = hwp_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"HWP handler not available: {e}")
@@ -742,7 +926,11 @@ class DocumentProcessor:
         # HWPX handler
         try:
             from libs.core.processor.hwps_handler import HWPXHandler
-            hwpx_handler = HWPXHandler(config=self._config, image_processor=self._image_processor)
+            hwpx_handler = HWPXHandler(
+                config=self._config,
+                image_processor=self._image_processor,
+                page_tag_processor=self._page_tag_processor
+            )
             self._handler_registry['hwpx'] = hwpx_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"HWPX handler not available: {e}")
@@ -750,7 +938,11 @@ class DocumentProcessor:
         # Text handler (for text, code, config, script, log, web types)
         try:
             from libs.core.processor.text_handler import TextHandler
-            text_handler = TextHandler(config=self._config, image_processor=self._image_processor)
+            text_handler = TextHandler(
+                config=self._config,
+                image_processor=self._image_processor,
+                page_tag_processor=self._page_tag_processor
+            )
             text_extensions = (
                 self.TEXT_TYPES |
                 self.CODE_TYPES |
@@ -763,6 +955,21 @@ class DocumentProcessor:
                 self._handler_registry[ext] = text_handler.extract_text
         except ImportError as e:
             self._logger.warning(f"Text handler not available: {e}")
+
+        # Image file handler (for standalone image files)
+        # Requires OCR engine for text extraction
+        try:
+            from libs.core.processor.image_file_handler import ImageFileHandler
+            image_handler = ImageFileHandler(
+                config=self._config,
+                image_processor=self._image_processor,
+                page_tag_processor=self._page_tag_processor,
+                ocr_engine=self._ocr_engine
+            )
+            for ext in self.IMAGE_TYPES:
+                self._handler_registry[ext] = image_handler.extract_text
+        except ImportError as e:
+            self._logger.warning(f"Image file handler not available: {e}")
 
         return self._handler_registry
 
