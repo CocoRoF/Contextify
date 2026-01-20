@@ -400,10 +400,10 @@ def _split_text(
                 chunks = _chunk_with_row_protection(text, chunk_size, chunk_overlap, force_chunking)
             else:
                 logger.debug("No protected blocks found, using standard chunking")
-                return _chunk_text_without_tables(text, chunk_size, chunk_overlap, metadata_block)
+                return _chunk_text_without_tables(text, chunk_size, chunk_overlap, metadata_block, page_tag_processor)
 
     # Clean chunks
-    cleaned_chunks = _clean_chunks(chunks)
+    cleaned_chunks = _clean_chunks(chunks, page_tag_processor)
 
     # Add metadata
     cleaned_chunks = _prepend_metadata_to_chunks(cleaned_chunks, metadata_block)
@@ -436,7 +436,8 @@ def _chunk_text_without_tables(
     text: str,
     chunk_size: int,
     chunk_overlap: int,
-    metadata: Optional[str]
+    metadata: Optional[str],
+    page_tag_processor: Optional[Any] = None
 ) -> List[str]:
     """
     Chunking logic for text without tables.
@@ -444,7 +445,8 @@ def _chunk_text_without_tables(
     """
     return chunk_text_without_tables(
         text, chunk_size, chunk_overlap, metadata,
-        _prepend_metadata_to_chunks
+        _prepend_metadata_to_chunks,
+        page_tag_processor
     )
 
 
@@ -657,83 +659,3 @@ def _build_line_offset_table(
 
     except Exception:
         return [{"line_num": 1, "start": 0, "end": len(text), "page": 1}]
-
-
-# ============================================================================
-# Backward Compatibility - Deprecated public functions
-# ============================================================================
-
-def split_table_based_content(
-    text: str,
-    chunk_size: int,
-    chunk_overlap: int
-) -> List[str]:
-    """
-    Chunk table-based content (CSV/Excel).
-
-    .. deprecated::
-        Use `create_chunks()` instead. This function is kept for backward compatibility.
-
-    Args:
-        text: Full text (metadata + table)
-        chunk_size: Maximum chunk size
-        chunk_overlap: Overlap size between chunks
-
-    Returns:
-        List of chunks
-    """
-    logger.warning(
-        "split_table_based_content() is deprecated. "
-        "Use create_chunks() with appropriate file_extension instead."
-    )
-    return _split_table_based_content(text, chunk_size, chunk_overlap)
-
-
-def split_text_preserving_html_blocks(
-    text: str,
-    chunk_size: int,
-    chunk_overlap: int,
-    file_extension: Optional[str] = None,
-    force_chunking: Optional[bool] = False
-) -> List[str]:
-    """
-    Chunk text while preserving HTML tables and considering page boundaries.
-
-    .. deprecated::
-        Use `create_chunks()` instead. This function is kept for backward compatibility.
-
-    Args:
-        text: Original text
-        chunk_size: Maximum chunk size
-        chunk_overlap: Overlap size between chunks
-        file_extension: File extension (csv, xlsx, pdf, etc.)
-        force_chunking: Force chunking (disable table protection)
-
-    Returns:
-        List of chunks
-    """
-    logger.warning(
-        "split_text_preserving_html_blocks() is deprecated. "
-        "Use create_chunks() instead."
-    )
-    return _split_text(
-        text, chunk_size, chunk_overlap,
-        file_extension=file_extension,
-        force_chunking=force_chunking
-    )
-
-
-def is_table_based_file_type(file_extension: Optional[str]) -> bool:
-    """
-    Check if the file extension is a table-based file type.
-
-    .. deprecated::
-        Use `_is_table_based_file_type()` instead (internal use only).
-
-    Args:
-        file_extension: File extension
-
-    Returns:
-        True if table-based file type
-    """
-    return _is_table_based_file_type(file_extension)
