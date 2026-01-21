@@ -46,6 +46,11 @@ class ImageFileHandler(BaseHandler):
         >>> text = handler.extract_text(current_file)
     """
     
+    def _create_file_converter(self):
+        """Create image-file-specific file converter."""
+        from contextifier.core.processor.image_file_helper.image_file_converter import ImageFileConverter
+        return ImageFileConverter()
+    
     def _create_chart_extractor(self) -> BaseChartExtractor:
         """Image files do not contain charts. Return NullChartExtractor."""
         return NullChartExtractor(self._chart_processor)

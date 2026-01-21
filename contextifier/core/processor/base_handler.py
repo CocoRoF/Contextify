@@ -41,6 +41,10 @@ from contextifier.core.functions.metadata_extractor import (
     DocumentMetadata,
     MetadataFormatter,
 )
+from contextifier.core.functions.file_converter import (
+    BaseFileConverter,
+    NullFileConverter,
+)
 
 if TYPE_CHECKING:
     from contextifier.core.document_processor import CurrentFile
@@ -84,6 +88,7 @@ class BaseHandler(ABC):
         chart_processor: ChartProcessor instance passed from DocumentProcessor
         chart_extractor: Format-specific chart extractor instance
         metadata_extractor: Format-specific metadata extractor instance
+        file_converter: Format-specific file converter instance
         logger: Logging instance
     """
     
@@ -109,6 +114,7 @@ class BaseHandler(ABC):
         self._chart_processor = chart_processor or self._get_chart_processor_from_config()
         self._chart_extractor: Optional[BaseChartExtractor] = None
         self._metadata_extractor: Optional[BaseMetadataExtractor] = None
+        self._file_converter: Optional[BaseFileConverter] = None
         self._format_image_processor: Optional[ImageProcessor] = None
         self._logger = logging.getLogger(f"document-processor.{self.__class__.__name__}")
     
@@ -159,6 +165,21 @@ class BaseHandler(ABC):
             ImageProcessor subclass instance
         """
         return self._image_processor
+    
+    def _create_file_converter(self) -> BaseFileConverter:
+        """
+        Create format-specific file converter.
+        
+        Override this method in subclasses to provide the appropriate
+        file converter for the file format.
+        
+        The file converter transforms raw binary data into a workable
+        format-specific object (e.g., Document, Workbook, OLE file).
+        
+        Returns:
+            BaseFileConverter subclass instance
+        """
+        return NullFileConverter()
     
     @property
     def config(self) -> Dict[str, Any]:
@@ -218,6 +239,21 @@ class BaseHandler(ABC):
             # If subclass returns None, use default image_processor
             self._format_image_processor = processor if processor is not None else self._image_processor
         return self._format_image_processor
+    
+    @property
+    def file_converter(self) -> BaseFileConverter:
+        """
+        Format-specific file converter (lazy-initialized).
+        
+        Returns the file converter for this handler's file format.
+        Each handler should override _create_file_converter() to provide
+        format-specific binary-to-object conversion.
+        """
+        if self._file_converter is None:
+            converter = self._create_file_converter()
+            # If subclass returns None, use NullFileConverter
+            self._file_converter = converter if converter is not None else NullFileConverter()
+        return self._file_converter
     
     @property
     def logger(self) -> logging.Logger:
@@ -285,6 +321,26 @@ class BaseHandler(ABC):
             Formatted metadata string
         """
         return self.metadata_extractor.extract_and_format(source)
+    
+    def convert_file(self, current_file: "CurrentFile", **kwargs) -> Any:
+        """
+        Convert binary file data to workable format.
+        
+        Convenience method that wraps self.file_converter.convert().
+        
+        This is the first step in the processing pipeline:
+        Binary Data → FileConverter → Workable Object
+        
+        Args:
+            current_file: CurrentFile dict containing file info and binary data
+            **kwargs: Additional format-specific options
+            
+        Returns:
+            Format-specific workable object (Document, Workbook, OLE file, etc.)
+        """
+        file_data = current_file.get("file_data", b"")
+        file_stream = self.get_file_stream(current_file)
+        return self.file_converter.convert(file_data, file_stream, **kwargs)
     
     def get_file_stream(self, current_file: "CurrentFile") -> io.BytesIO:
         """

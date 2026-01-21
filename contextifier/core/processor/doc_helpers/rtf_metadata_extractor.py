@@ -9,7 +9,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Dict, Optional, Union
 
 from contextifier.core.functions.metadata_extractor import (
     BaseMetadataExtractor,
@@ -53,16 +53,22 @@ class DOCMetadataExtractor(BaseMetadataExtractor):
         text = extractor.format(metadata)
     """
     
-    def extract(self, source: RTFSourceInfo) -> DocumentMetadata:
+    def extract(self, source: Union[RTFSourceInfo, Dict[str, Any]]) -> DocumentMetadata:
         """
-        Extract metadata from RTF content.
+        Extract metadata from RTF content or pre-parsed metadata dict.
         
         Args:
             source: RTFSourceInfo object (RTF content string and encoding)
+                    OR Dict[str, Any] (pre-parsed metadata from RTFDocument.metadata)
             
         Returns:
             DocumentMetadata instance containing extracted metadata.
         """
+        # Handle pre-parsed metadata dict (from RTFDocument.metadata)
+        if isinstance(source, dict):
+            return self._from_dict(source)
+        
+        # Handle RTFSourceInfo (raw RTF content)
         content = source.content
         encoding = source.encoding
         
@@ -146,6 +152,27 @@ class DOCMetadataExtractor(BaseMetadataExtractor):
             except (ValueError, TypeError):
                 pass
         return None
+    
+    def _from_dict(self, metadata: Dict[str, Any]) -> DocumentMetadata:
+        """
+        Convert pre-parsed metadata dict to DocumentMetadata.
+        
+        Args:
+            metadata: Dict from RTFDocument.metadata
+            
+        Returns:
+            DocumentMetadata instance
+        """
+        return DocumentMetadata(
+            title=metadata.get('title'),
+            subject=metadata.get('subject'),
+            author=metadata.get('author'),
+            keywords=metadata.get('keywords'),
+            comments=metadata.get('comments'),
+            last_saved_by=metadata.get('last_saved_by'),
+            create_time=metadata.get('create_time'),
+            last_saved_time=metadata.get('last_saved_time'),
+        )
 
 
 __all__ = [

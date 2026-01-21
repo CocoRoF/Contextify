@@ -29,6 +29,9 @@ User calls: processor.extract_chunks(file_path)
 ```
 PDFHandler.extract_text(current_file)
     │
+    ├─► file_converter.convert()                        [INTERFACE: PDFFileConverter]
+    │       └─► Binary → fitz.Document
+    │
     ├─► metadata_extractor.extract()                    [INTERFACE: PDFMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: PDFMetadataExtractor]
     │
@@ -51,6 +54,9 @@ PDFHandler.extract_text(current_file)
 
 ```
 DOCXHandler.extract_text(current_file)
+    │
+    ├─► file_converter.convert()                        [INTERFACE: DOCXFileConverter]
+    │       └─► Binary → docx.Document
     │
     ├─► metadata_extractor.extract()                    [INTERFACE: DOCXMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: DOCXMetadataExtractor]
@@ -75,6 +81,9 @@ DOCXHandler.extract_text(current_file)
 ```
 DOCHandler.extract_text(current_file)
     │
+    ├─► file_converter.convert()                        [INTERFACE: DOCFileConverter]
+    │       └─► Binary → RTF/OLE/HTML/DOCX (auto-detect)
+    │
     ├─► metadata_extractor.extract()                    [INTERFACE: DOCMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: DOCMetadataExtractor]
     │
@@ -91,6 +100,9 @@ DOCHandler.extract_text(current_file)
 
 ```
 ExcelHandler.extract_text(current_file) [XLSX]
+    │
+    ├─► file_converter.convert()                        [INTERFACE: ExcelFileConverter]
+    │       └─► Binary → openpyxl.Workbook
     │
     ├─► metadata_extractor.extract()                    [INTERFACE: XLSXMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: XLSXMetadataExtractor]
@@ -117,6 +129,9 @@ ExcelHandler.extract_text(current_file) [XLSX]
 ```
 ExcelHandler.extract_text(current_file) [XLS]
     │
+    ├─► file_converter.convert()                        [INTERFACE: XLSFileConverter]
+    │       └─► Binary → xlrd.Book
+    │
     ├─► metadata_extractor.extract()                    [INTERFACE: XLSMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: XLSMetadataExtractor]
     │
@@ -133,6 +148,9 @@ ExcelHandler.extract_text(current_file) [XLS]
 
 ```
 PPTHandler.extract_text(current_file)
+    │
+    ├─► file_converter.convert()                        [INTERFACE: PPTFileConverter]
+    │       └─► Binary → pptx.Presentation
     │
     ├─► metadata_extractor.extract()                    [INTERFACE: PPTMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: PPTMetadataExtractor]
@@ -154,6 +172,9 @@ PPTHandler.extract_text(current_file)
 
 ```
 HWPHandler.extract_text(current_file)
+    │
+    ├─► file_converter.convert()                        [INTERFACE: HWPFileConverter]
+    │       └─► Binary → olefile.OleFileIO
     │
     ├─► metadata_extractor.extract()                    [INTERFACE: HWPMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: HWPMetadataExtractor]
@@ -181,6 +202,9 @@ HWPHandler.extract_text(current_file)
 ```
 HWPXHandler.extract_text(current_file)
     │
+    ├─► file_converter.convert()                        [INTERFACE: HWPXFileConverter]
+    │       └─► Binary → zipfile.ZipFile
+    │
     ├─► metadata_extractor.extract()                    [INTERFACE: HWPXMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: HWPXMetadataExtractor]
     │
@@ -207,6 +231,9 @@ HWPXHandler.extract_text(current_file)
 ```
 CSVHandler.extract_text(current_file)
     │
+    ├─► file_converter.convert()                        [INTERFACE: CSVFileConverter]
+    │       └─► Binary → Text (with encoding detection)
+    │
     ├─► metadata_extractor.extract()                    [INTERFACE: CSVMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: CSVMetadataExtractor]
     │
@@ -222,6 +249,9 @@ CSVHandler.extract_text(current_file)
 ```
 TextHandler.extract_text(current_file)
     │
+    ├─► file_converter.convert()                        [INTERFACE: TextFileConverter]
+    │       └─► Binary → Text (with encoding detection)
+    │
     ├─► metadata_extractor.extract()                    [INTERFACE: TextMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: TextMetadataExtractor]
     │
@@ -235,6 +265,9 @@ TextHandler.extract_text(current_file)
 ```
 HTMLReprocessor.extract_text(current_file)
     │
+    ├─► file_converter.convert()                        [INTERFACE: HTMLFileConverter]
+    │       └─► Binary → BeautifulSoup
+    │
     └─► BeautifulSoup parsing                           [EXTERNAL LIBRARY]
 ```
 
@@ -244,6 +277,9 @@ HTMLReprocessor.extract_text(current_file)
 
 ```
 ImageFileHandler.extract_text(current_file)
+    │
+    ├─► file_converter.convert()                        [INTERFACE: ImageFileConverter]
+    │       └─► Binary → Binary (pass-through)
     │
     ├─► metadata_extractor.extract()                    [INTERFACE: ImageFileMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: ImageFileMetadataExtractor]
@@ -281,22 +317,22 @@ chunk_text(text, chunk_size, chunk_overlap)
 ## Interface Integration Summary
 
 ```
-┌─────────────┬─────────────────────┬─────────────────────┬─────────────────────┐
-│ Handler     │ MetadataExtractor   │ ChartExtractor      │ FormatImageProcessor│
-├─────────────┼─────────────────────┼─────────────────────┼─────────────────────┤
-│ PDF         │ ✅ PDFMetadata       │ ✅ PDFChart          │ ✅ PDFImage          │
-│ DOCX        │ ✅ DOCXMetadata      │ ✅ DOCXChart         │ ✅ DOCXImage         │
-│ DOC         │ ✅ DOCMetadata       │ ❌ NullChart         │ ✅ DOCImage          │
-│ XLSX        │ ✅ XLSXMetadata      │ ✅ ExcelChart        │ ✅ ExcelImage        │
-│ XLS         │ ✅ XLSMetadata       │ ❌ NullChart         │ ✅ ExcelImage        │
-│ PPT/PPTX    │ ✅ PPTMetadata       │ ✅ PPTChart          │ ✅ PPTImage          │
-│ HWP         │ ✅ HWPMetadata       │ ✅ HWPChart          │ ✅ HWPImage          │
-│ HWPX        │ ✅ HWPXMetadata      │ ✅ HWPXChart         │ ✅ HWPXImage         │
-│ CSV         │ ✅ CSVMetadata       │ ❌ NullChart         │ ❌ None              │
-│ TXT/MD/JSON │ ✅ TextMetadata      │ ❌ NullChart         │ ❌ None              │
-│ HTML        │ ❌ None              │ ❌ NullChart         │ ❌ None              │
-│ Image Files │ ✅ ImageFileMeta     │ ❌ NullChart         │ ✅ ImageFileImage    │
-└─────────────┴─────────────────────┴─────────────────────┴─────────────────────┘
+┌─────────────┬─────────────────────┬─────────────────────┬─────────────────────┬─────────────────────┐
+│ Handler     │ FileConverter       │ MetadataExtractor   │ ChartExtractor      │ FormatImageProcessor│
+├─────────────┼─────────────────────┼─────────────────────┼─────────────────────┼─────────────────────┤
+│ PDF         │ ✅ PDFFile           │ ✅ PDFMetadata       │ ✅ PDFChart          │ ✅ PDFImage          │
+│ DOCX        │ ✅ DOCXFile          │ ✅ DOCXMetadata      │ ✅ DOCXChart         │ ✅ DOCXImage         │
+│ DOC         │ ✅ DOCFile           │ ✅ DOCMetadata       │ ❌ NullChart         │ ✅ DOCImage          │
+│ XLSX        │ ✅ XLSXFile          │ ✅ XLSXMetadata      │ ✅ ExcelChart        │ ✅ ExcelImage        │
+│ XLS         │ ✅ XLSFile           │ ✅ XLSMetadata       │ ❌ NullChart         │ ✅ ExcelImage        │
+│ PPT/PPTX    │ ✅ PPTFile           │ ✅ PPTMetadata       │ ✅ PPTChart          │ ✅ PPTImage          │
+│ HWP         │ ✅ HWPFile           │ ✅ HWPMetadata       │ ✅ HWPChart          │ ✅ HWPImage          │
+│ HWPX        │ ✅ HWPXFile          │ ✅ HWPXMetadata      │ ✅ HWPXChart         │ ✅ HWPXImage         │
+│ CSV         │ ✅ CSVFile           │ ✅ CSVMetadata       │ ❌ NullChart         │ ❌ None              │
+│ TXT/MD/JSON │ ✅ TextFile          │ ✅ TextMetadata      │ ❌ NullChart         │ ❌ None              │
+│ HTML        │ ✅ HTMLFile          │ ❌ None              │ ❌ NullChart         │ ❌ None              │
+│ Image Files │ ✅ ImageFile (pass)  │ ✅ ImageFileMeta     │ ❌ NullChart         │ ✅ ImageFileImage    │
+└─────────────┴─────────────────────┴─────────────────────┴─────────────────────┴─────────────────────┘
 
 ✅ = Interface implemented
 ❌ = Not applicable / NullExtractor

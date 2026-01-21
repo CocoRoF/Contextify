@@ -46,9 +46,6 @@ from contextifier.core.processor.excel_helper.excel_image_processor import (
     ExcelImageProcessor,
 )
 
-import xlrd
-from openpyxl import load_workbook
-
 logger = logging.getLogger("document-processor")
 
 
@@ -71,6 +68,11 @@ class ExcelHandler(BaseHandler):
         super().__init__(*args, **kwargs)
         self._xlsx_metadata_extractor = None
         self._xls_metadata_extractor = None
+    
+    def _create_file_converter(self):
+        """Create Excel-specific file converter."""
+        from contextifier.core.processor.excel_helper.excel_file_converter import ExcelFileConverter
+        return ExcelFileConverter()
     
     def _create_chart_extractor(self) -> BaseChartExtractor:
         """Create Excel-specific chart extractor."""
@@ -135,9 +137,9 @@ class ExcelHandler(BaseHandler):
         self.logger.info(f"XLSX processing: {file_path}")
 
         try:
-            # Open from stream to avoid path encoding issues
-            file_stream = self.get_file_stream(current_file)
-            wb = load_workbook(file_stream, data_only=True)
+            # Convert to Workbook using file_converter
+            file_data = current_file.get("file_data", b"")
+            wb = self.file_converter.convert(file_data, extension='xlsx')
             preload = self._preload_xlsx_data(current_file, wb, extract_metadata)
 
             result_parts = [preload["metadata_str"]] if preload["metadata_str"] else []
@@ -179,9 +181,9 @@ class ExcelHandler(BaseHandler):
         self.logger.info(f"XLS processing: {file_path}")
 
         try:
-            # xlrd can open from file_contents (bytes)
+            # Convert to Workbook using file_converter
             file_data = current_file.get("file_data", b"")
-            wb = xlrd.open_workbook(file_contents=file_data, formatting_info=True)
+            wb = self.file_converter.convert(file_data, extension='xls')
             result_parts = []
 
             if extract_metadata:

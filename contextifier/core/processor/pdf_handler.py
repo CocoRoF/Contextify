@@ -132,6 +132,11 @@ class PDFHandler(BaseHandler):
         text = handler.extract_text(current_file)
     """
     
+    def _create_file_converter(self):
+        """Create PDF-specific file converter."""
+        from contextifier.core.processor.pdf_helpers.pdf_file_converter import PDFFileConverter
+        return PDFFileConverter()
+    
     def _create_chart_extractor(self):
         """PDF chart extraction not yet implemented. Return NullChartExtractor."""
         from contextifier.core.functions.chart_extractor import NullChartExtractor
@@ -187,11 +192,11 @@ class PDFHandler(BaseHandler):
             Extracted text
         """
         file_path = current_file.get("file_path", "unknown")
+        file_data = current_file.get("file_data", b"")
         
         try:
-            # Open PDF from stream to avoid path encoding issues
-            file_stream = self.get_file_stream(current_file)
-            doc = fitz.open(stream=file_stream, filetype="pdf")
+            # Use FileConverter to convert binary to fitz.Document
+            doc = self.file_converter.convert(file_data)
             all_pages_text = []
             processed_images: Set[int] = set()
 

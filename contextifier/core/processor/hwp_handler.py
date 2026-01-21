@@ -12,8 +12,6 @@ import traceback
 import zipfile
 from typing import List, Dict, Any, Optional, Set, TYPE_CHECKING
 
-import olefile
-
 from contextifier.core.processor.base_handler import BaseHandler
 from contextifier.core.functions.chart_extractor import BaseChartExtractor
 from contextifier.core.processor.hwp_helper import (
@@ -44,6 +42,11 @@ logger = logging.getLogger("document-processor")
 
 class HWPHandler(BaseHandler):
     """HWP 5.0 OLE Format File Processing Handler Class"""
+    
+    def _create_file_converter(self):
+        """Create HWP-specific file converter."""
+        from contextifier.core.processor.hwp_helper.hwp_file_converter import HWPFileConverter
+        return HWPFileConverter()
     
     def _create_chart_extractor(self) -> BaseChartExtractor:
         """Create HWP-specific chart extractor."""
@@ -82,23 +85,24 @@ class HWPHandler(BaseHandler):
         file_path = current_file.get("file_path", "unknown")
         file_data = current_file.get("file_data", b"")
         
-        # Check if it's an OLE file using bytes
-        if not self._is_ole_file(file_data):
+        # Check if it's an OLE file using file_converter.validate()
+        if not self.file_converter.validate(file_data):
             return self._handle_non_ole_file(current_file, extract_metadata)
         
         text_content = []
         processed_images: Set[str] = set()
         
         try:
-            # Open OLE file from stream
+            # Open OLE file using file_converter
             file_stream = self.get_file_stream(current_file)
             
             # Pre-extract all charts using ChartExtractor
             chart_data_list = self.chart_extractor.extract_all_from_file(file_stream)
             
-            file_stream.seek(0)
+            # Convert binary to OLE object using file_converter
+            ole = self.file_converter.convert(file_data, file_stream)
             
-            with olefile.OleFileIO(file_stream) as ole:
+            try:
                 if extract_metadata:
                     metadata_text = self._extract_metadata(ole)
                     if metadata_text:
@@ -124,6 +128,9 @@ class HWPHandler(BaseHandler):
                     chart_text = self._format_chart_data(chart_data)
                     if chart_text:
                         text_content.append(chart_text)
+            finally:
+                # Close OLE object using file_converter
+                self.file_converter.close(ole)
         
         except Exception as e:
             self.logger.error(f"Error processing HWP file: {e}")
@@ -150,12 +157,6 @@ class HWPHandler(BaseHandler):
                 chart_type=chart_data.chart_type,
                 title=chart_data.title
             )
-    
-    def _is_ole_file(self, file_data: bytes) -> bool:
-        """Check if file data is OLE format."""
-        # OLE file signature: D0 CF 11 E0 A1 B1 1A E1
-        ole_signature = b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'
-        return file_data[:8] == ole_signature
     
     def _handle_non_ole_file(self, current_file: "CurrentFile", extract_metadata: bool) -> str:
         """Handle non-OLE file."""

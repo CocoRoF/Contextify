@@ -77,6 +77,11 @@ class DOCXHandler(BaseHandler):
         text = handler.extract_text(current_file)
     """
     
+    def _create_file_converter(self):
+        """Create DOCX-specific file converter."""
+        from contextifier.core.processor.docx_helper.docx_file_converter import DOCXFileConverter
+        return DOCXFileConverter()
+    
     def _create_chart_extractor(self) -> BaseChartExtractor:
         """Create DOCX-specific chart extractor."""
         return DOCXChartExtractor(self._chart_processor)
@@ -112,25 +117,16 @@ class DOCXHandler(BaseHandler):
             Extracted text (with inline image tags, table HTML)
         """
         file_path = current_file.get("file_path", "unknown")
+        file_data = current_file.get("file_data", b"")
         self.logger.info(f"DOCX processing: {file_path}")
         
-        # Check if file is a valid ZIP (DOCX is a ZIP-based format)
-        if self._is_valid_zip(current_file):
+        # Check if file is a valid DOCX using file_converter validation
+        if self.file_converter.validate(file_data):
             return self._extract_docx_enhanced(current_file, extract_metadata)
         else:
-            # Not a valid ZIP, try DOCHandler fallback
-            self.logger.warning(f"File is not a valid ZIP, trying DOCHandler fallback: {file_path}")
+            # Not a valid DOCX, try DOCHandler fallback
+            self.logger.warning(f"File is not a valid DOCX, trying DOCHandler fallback: {file_path}")
             return self._extract_with_doc_handler_fallback(current_file, extract_metadata)
-    
-    def _is_valid_zip(self, current_file: "CurrentFile") -> bool:
-        """Check if file is a valid ZIP archive."""
-        try:
-            file_stream = self.get_file_stream(current_file)
-            with zipfile.ZipFile(file_stream, 'r') as zf:
-                # Check for DOCX-specific content
-                return '[Content_Types].xml' in zf.namelist()
-        except (zipfile.BadZipFile, Exception):
-            return False
     
     def _extract_with_doc_handler_fallback(
         self,
@@ -213,12 +209,12 @@ class DOCXHandler(BaseHandler):
         - Page break handling
         """
         file_path = current_file.get("file_path", "unknown")
+        file_data = current_file.get("file_data", b"")
         self.logger.info(f"Enhanced DOCX processing: {file_path}")
 
         try:
-            # Use BytesIO stream to avoid path encoding issues
-            file_stream = self.get_file_stream(current_file)
-            doc = Document(file_stream)
+            # Use file_converter to convert binary to Document
+            doc = self.file_converter.convert(file_data)
             result_parts = []
             processed_images: Set[str] = set()
             current_page = 1
@@ -227,7 +223,7 @@ class DOCXHandler(BaseHandler):
             total_charts = 0
 
             # Pre-extract all charts using ChartExtractor
-            file_stream.seek(0)
+            file_stream = self.get_file_stream(current_file)
             chart_data_list = self.chart_extractor.extract_all_from_file(file_stream)
             chart_idx = [0]  # Mutable container for closure
             
@@ -316,8 +312,8 @@ class DOCXHandler(BaseHandler):
     def _extract_docx_simple_text(self, current_file: "CurrentFile") -> str:
         """Simple text extraction (fallback)."""
         try:
-            file_stream = self.get_file_stream(current_file)
-            doc = Document(file_stream)
+            file_data = current_file.get("file_data", b"")
+            doc = self.file_converter.convert(file_data)
             result_parts = []
 
             for para in doc.paragraphs:

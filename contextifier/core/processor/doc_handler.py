@@ -53,20 +53,14 @@ MAGIC_NUMBERS = {
     'ZIP': b'PK\x03\x04',
 }
 
-METADATA_FIELD_NAMES = {
-    'title': '제목',
-    'subject': '주제',
-    'author': '작성자',
-    'keywords': '키워드',
-    'comments': '설명',
-    'last_saved_by': '마지막 저장자',
-    'create_time': '작성일',
-    'last_saved_time': '수정일',
-}
-
 
 class DOCHandler(BaseHandler):
     """DOC file processing handler class."""
+    
+    def _create_file_converter(self):
+        """Create DOC-specific file converter."""
+        from contextifier.core.processor.doc_helpers.doc_file_converter import DOCFileConverter
+        return DOCFileConverter()
     
     def _create_chart_extractor(self) -> BaseChartExtractor:
         """DOC files chart extraction not yet implemented. Return NullChartExtractor."""
@@ -96,71 +90,68 @@ class DOCHandler(BaseHandler):
             self.logger.error(f"Empty file data: {file_path}")
             return f"[DOC file is empty: {file_path}]"
         
-        doc_format = self._detect_format_from_bytes(file_data)
-        
         try:
+            # Use file_converter to detect format and convert
+            converted_obj, doc_format = self.file_converter.convert(file_data)
+            
             if doc_format == DocFormat.RTF:
-                return self._extract_from_rtf(current_file, extract_metadata)
+                return self._extract_from_rtf_obj(converted_obj, current_file, extract_metadata)
             elif doc_format == DocFormat.OLE:
-                return self._extract_from_ole(current_file, extract_metadata)
+                return self._extract_from_ole_obj(converted_obj, current_file, extract_metadata)
             elif doc_format == DocFormat.HTML:
-                return self._extract_from_html(current_file, extract_metadata)
+                return self._extract_from_html_obj(converted_obj, current_file, extract_metadata)
             elif doc_format == DocFormat.DOCX:
-                return self._extract_from_docx_misnamed(current_file, extract_metadata)
+                return self._extract_from_docx_obj(converted_obj, current_file, extract_metadata)
             else:
-                self.logger.warning(f"Unknown DOC format, trying OLE: {file_path}")
+                self.logger.warning(f"Unknown DOC format, trying OLE fallback: {file_path}")
                 return self._extract_from_ole(current_file, extract_metadata)
         except Exception as e:
             self.logger.error(f"Error in DOC processing: {e}")
             return f"[DOC file processing failed: {str(e)}]"
     
-    def _detect_format_from_bytes(self, file_data: bytes) -> DocFormat:
-        """Detect file format from binary data."""
+    def _extract_from_rtf_obj(self, rtf_doc, current_file: "CurrentFile", extract_metadata: bool) -> str:
+        """RTF file processing using pre-converted RTF document."""
+        file_path = current_file.get("file_path", "unknown")
+        
+        self.logger.info(f"Processing RTF: {file_path}")
+        
         try:
-            header = file_data[:32] if len(file_data) >= 32 else file_data
+            result_parts = []
             
-            if not header:
-                return DocFormat.UNKNOWN
+            if extract_metadata:
+                metadata_str = self.extract_and_format_metadata(rtf_doc.metadata)
+                if metadata_str:
+                    result_parts.append(metadata_str + "\n\n")
             
-            if header.startswith(MAGIC_NUMBERS['RTF']):
-                return DocFormat.RTF
+            page_tag = self.create_page_tag(1)
+            result_parts.append(f"{page_tag}\n")
             
-            if header.startswith(MAGIC_NUMBERS['OLE']):
-                return DocFormat.OLE
-            
-            if header.startswith(MAGIC_NUMBERS['ZIP']):
-                try:
-                    file_stream = io.BytesIO(file_data)
-                    with zipfile.ZipFile(file_stream, 'r') as zf:
-                        if '[Content_Types].xml' in zf.namelist():
-                            return DocFormat.DOCX
-                except zipfile.BadZipFile:
-                    pass
-            
-            header_lower = header.lower()
-            if header_lower.startswith(b'<!doctype') or header_lower.startswith(b'<html') or b'<html' in header_lower[:100]:
-                return DocFormat.HTML
-            
-            try:
-                if header.startswith(b'\xef\xbb\xbf'):
-                    text_header = header[3:].decode('utf-8', errors='ignore').lower()
-                else:
-                    text_header = header.decode('utf-8', errors='ignore').lower()
+            inline_content = rtf_doc.get_inline_content()
+            if inline_content:
+                result_parts.append(inline_content)
+            else:
+                if rtf_doc.text_content:
+                    result_parts.append(rtf_doc.text_content)
                 
-                if text_header.startswith('{\\rtf'):
-                    return DocFormat.RTF
-                if text_header.startswith('<!doctype') or text_header.startswith('<html'):
-                    return DocFormat.HTML
-            except:
-                pass
+                for table in rtf_doc.tables:
+                    if not table.rows:
+                        continue
+                    if table.is_real_table():
+                        result_parts.append("\n" + table.to_html() + "\n")
+                    else:
+                        result_parts.append("\n" + table.to_text_list() + "\n")
             
-            return DocFormat.UNKNOWN
+            result = "\n".join(result_parts)
+            result = re.sub(r'\[image:[^\]]*uploads/\.[^\]]*\]', '', result)
+            
+            return result
+            
         except Exception as e:
-            self.logger.error(f"Error detecting format: {e}")
-            return DocFormat.UNKNOWN
+            self.logger.error(f"RTF processing error: {e}")
+            return self._extract_from_rtf(current_file, extract_metadata)
     
     def _extract_from_rtf(self, current_file: "CurrentFile", extract_metadata: bool) -> str:
-        """RTF file processing."""
+        """RTF file processing fallback - re-parse from bytes."""
         file_path = current_file.get("file_path", "unknown")
         file_data = current_file.get("file_data", b"")
         
@@ -175,7 +166,7 @@ class DOCHandler(BaseHandler):
             result_parts = []
             
             if extract_metadata:
-                metadata_str = self._format_metadata(doc.metadata)
+                metadata_str = self.extract_and_format_metadata(doc.metadata)
                 if metadata_str:
                     result_parts.append(metadata_str + "\n\n")
             
@@ -225,7 +216,7 @@ class DOCHandler(BaseHandler):
         
         if extract_metadata:
             metadata = self._extract_rtf_metadata(content)
-            metadata_str = self._format_metadata(metadata)
+            metadata_str = self.extract_and_format_metadata(metadata)
             if metadata_str:
                 result_parts.append(metadata_str + "\n\n")
         
@@ -266,6 +257,45 @@ class DOCHandler(BaseHandler):
         
         return metadata
     
+    def _extract_from_ole_obj(self, ole, current_file: "CurrentFile", extract_metadata: bool) -> str:
+        """OLE Compound Document processing using pre-converted OLE object."""
+        file_path = current_file.get("file_path", "unknown")
+        
+        self.logger.info(f"Processing OLE: {file_path}")
+        
+        result_parts = []
+        processed_images: Set[str] = set()
+        
+        try:
+            # Metadata extraction
+            if extract_metadata:
+                metadata = self._extract_ole_metadata(ole)
+                metadata_str = self.extract_and_format_metadata(metadata)
+                if metadata_str:
+                    result_parts.append(metadata_str + "\n\n")
+            
+            page_tag = self.create_page_tag(1)
+            result_parts.append(f"{page_tag}\n")
+            
+            # Extract text from WordDocument stream
+            text = self._extract_ole_text(ole)
+            if text:
+                result_parts.append(text)
+            
+            # Extract images
+            images = self._extract_ole_images(ole, processed_images)
+            for img_tag in images:
+                result_parts.append(img_tag)
+                
+        except Exception as e:
+            self.logger.error(f"OLE processing error: {e}")
+            return f"[DOC file processing failed: {str(e)}]"
+        finally:
+            # Close the OLE object
+            self.file_converter.close(ole)
+        
+        return "\n".join(result_parts)
+    
     def _extract_from_ole(self, current_file: "CurrentFile", extract_metadata: bool) -> str:
         """OLE Compound Document processing - extract text directly from WordDocument stream."""
         file_path = current_file.get("file_path", "unknown")
@@ -282,7 +312,7 @@ class DOCHandler(BaseHandler):
                 # Metadata extraction
                 if extract_metadata:
                     metadata = self._extract_ole_metadata(ole)
-                    metadata_str = self._format_metadata(metadata)
+                    metadata_str = self.extract_and_format_metadata(metadata)
                     if metadata_str:
                         result_parts.append(metadata_str + "\n\n")
                 
@@ -367,6 +397,100 @@ class DOCHandler(BaseHandler):
             self.logger.warning(f"Error extracting OLE images: {e}")
         return images
     
+    def _extract_from_html_obj(self, soup, current_file: "CurrentFile", extract_metadata: bool) -> str:
+        """HTML DOC processing using pre-converted BeautifulSoup object."""
+        file_path = current_file.get("file_path", "unknown")
+        
+        self.logger.info(f"Processing HTML DOC: {file_path}")
+        
+        result_parts = []
+        
+        if extract_metadata:
+            metadata = self._extract_html_metadata(soup)
+            metadata_str = self.extract_and_format_metadata(metadata)
+            if metadata_str:
+                result_parts.append(metadata_str + "\n\n")
+        
+        page_tag = self.create_page_tag(1)
+        result_parts.append(f"{page_tag}\n")
+        
+        # Copy soup to avoid modifying the original
+        soup_copy = BeautifulSoup(str(soup), 'html.parser')
+        
+        for tag in soup_copy(['script', 'style', 'meta', 'link', 'head']):
+            tag.decompose()
+        
+        text = soup_copy.get_text(separator='\n', strip=True)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        
+        if text:
+            result_parts.append(text)
+        
+        for table in soup_copy.find_all('table'):
+            table_html = str(table)
+            table_html = re.sub(r'\s+style="[^"]*"', '', table_html)
+            table_html = re.sub(r'\s+class="[^"]*"', '', table_html)
+            result_parts.append("\n" + table_html + "\n")
+        
+        for img in soup_copy.find_all('img'):
+            src = img.get('src', '')
+            if src and src.startswith('data:image'):
+                try:
+                    match = re.match(r'data:image/(\w+);base64,(.+)', src)
+                    if match:
+                        image_data = base64.b64decode(match.group(2))
+                        image_tag = self.format_image_processor.save_image(image_data)
+                        if image_tag:
+                            result_parts.append(f"\n{image_tag}\n")
+                except:
+                    pass
+        
+        return "\n".join(result_parts)
+    
+    def _extract_from_docx_obj(self, doc, current_file: "CurrentFile", extract_metadata: bool) -> str:
+        """Extract from misnamed DOCX using pre-converted Document object."""
+        file_path = current_file.get("file_path", "unknown")
+        
+        self.logger.info(f"Processing misnamed DOCX: {file_path}")
+        
+        try:
+            result_parts = []
+            
+            if extract_metadata:
+                # Basic metadata from docx Document
+                if hasattr(doc, 'core_properties'):
+                    metadata = {
+                        'title': doc.core_properties.title or '',
+                        'author': doc.core_properties.author or '',
+                        'subject': doc.core_properties.subject or '',
+                        'keywords': doc.core_properties.keywords or '',
+                    }
+                    metadata = {k: v for k, v in metadata.items() if v}
+                    metadata_str = self.extract_and_format_metadata(metadata)
+                    if metadata_str:
+                        result_parts.append(metadata_str + "\n\n")
+            
+            page_tag = self.create_page_tag(1)
+            result_parts.append(f"{page_tag}\n")
+            
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    result_parts.append(para.text)
+            
+            for table in doc.tables:
+                for row in table.rows:
+                    row_texts = []
+                    for cell in row.cells:
+                        row_texts.append(cell.text.strip())
+                    if any(t for t in row_texts):
+                        result_parts.append(" | ".join(row_texts))
+            
+            return "\n".join(result_parts)
+            
+        except Exception as e:
+            self.logger.error(f"Error processing misnamed DOCX: {e}")
+            return f"[DOCX processing failed: {str(e)}]"
+    
     def _extract_from_html(self, current_file: "CurrentFile", extract_metadata: bool) -> str:
         """HTML DOC processing."""
         file_path = current_file.get("file_path", "unknown")
@@ -390,7 +514,7 @@ class DOCHandler(BaseHandler):
         
         if extract_metadata:
             metadata = self._extract_html_metadata(soup)
-            metadata_str = self._format_metadata(metadata)
+            metadata_str = self.extract_and_format_metadata(metadata)
             if metadata_str:
                 result_parts.append(metadata_str + "\n\n")
         
@@ -572,19 +696,3 @@ class DOCHandler(BaseHandler):
             return result.strip()
         
         return ""
-    
-    def _format_metadata(self, metadata: Dict[str, Any]) -> str:
-        """메타데이터 포맷팅"""
-        if not metadata:
-            return ""
-        
-        lines = ["<Document-Metadata>"]
-        for key, label in METADATA_FIELD_NAMES.items():
-            if key in metadata and metadata[key]:
-                value = metadata[key]
-                if isinstance(value, datetime):
-                    value = value.strftime('%Y-%m-%d %H:%M:%S')
-                lines.append(f"  {label}: {value}")
-        lines.append("</Document-Metadata>")
-        
-        return "\n".join(lines)

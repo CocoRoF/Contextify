@@ -7,8 +7,6 @@ Class-based handler for PPT/PPTX files inheriting from BaseHandler.
 import logging
 from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
-from pptx import Presentation
-
 from contextifier.core.processor.base_handler import BaseHandler
 from contextifier.core.functions.chart_extractor import BaseChartExtractor
 from contextifier.core.processor.ppt_helper import (
@@ -39,6 +37,11 @@ logger = logging.getLogger("document-processor")
 
 class PPTHandler(BaseHandler):
     """PPT/PPTX File Processing Handler Class"""
+    
+    def _create_file_converter(self):
+        """Create PPT-specific file converter."""
+        from contextifier.core.processor.ppt_helper.ppt_file_converter import PPTFileConverter
+        return PPTFileConverter()
     
     def _create_chart_extractor(self) -> BaseChartExtractor:
         """Create PPT-specific chart extractor."""
@@ -84,9 +87,10 @@ class PPTHandler(BaseHandler):
         self.logger.info(f"Enhanced PPT processing: {file_path}")
         
         try:
-            # Open from stream to avoid path encoding issues
+            # Convert to Presentation using file_converter
+            file_data = current_file.get("file_data", b"")
             file_stream = self.get_file_stream(current_file)
-            prs = Presentation(file_stream)
+            prs = self.file_converter.convert(file_data, file_stream)
             result_parts = []
             processed_images: Set[str] = set()
             total_tables = 0
@@ -240,8 +244,9 @@ class PPTHandler(BaseHandler):
     def _extract_ppt_simple(self, current_file: "CurrentFile") -> str:
         """Simple text extraction (fallback)."""
         try:
+            file_data = current_file.get("file_data", b"")
             file_stream = self.get_file_stream(current_file)
-            prs = Presentation(file_stream)
+            prs = self.file_converter.convert(file_data, file_stream)
             result_parts = []
             
             for slide_idx, slide in enumerate(prs.slides):

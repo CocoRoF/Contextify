@@ -33,6 +33,11 @@ ENCODING_CANDIDATES = ['utf-8', 'utf-8-sig', 'cp949', 'euc-kr', 'iso-8859-1', 'l
 class CSVHandler(BaseHandler):
     """CSV/TSV File Processing Handler Class"""
     
+    def _create_file_converter(self):
+        """Create CSV-specific file converter."""
+        from contextifier.core.processor.csv_helper.csv_file_converter import CSVFileConverter
+        return CSVFileConverter()
+    
     def _create_chart_extractor(self) -> BaseChartExtractor:
         """CSV files do not contain charts. Return NullChartExtractor."""
         return NullChartExtractor(self._chart_processor)
@@ -76,9 +81,9 @@ class CSVHandler(BaseHandler):
         try:
             result_parts = []
             
-            # Decode file_data with encoding detection
+            # Decode file_data using file_converter
             file_data = current_file.get("file_data", b"")
-            content, detected_encoding = self._decode_with_encoding(file_data, encoding)
+            content, detected_encoding = self.file_converter.convert(file_data, encoding=encoding)
             
             if delimiter is None:
                 delimiter = detect_delimiter(content)
@@ -118,56 +123,3 @@ class CSVHandler(BaseHandler):
             import traceback
             self.logger.debug(traceback.format_exc())
             raise
-    
-    def _decode_with_encoding(
-        self,
-        file_data: bytes,
-        preferred_encoding: Optional[str] = None
-    ) -> Tuple[str, str]:
-        """
-        Decode bytes with encoding detection.
-        
-        Args:
-            file_data: Raw bytes data
-            preferred_encoding: Preferred encoding (None for auto-detect)
-            
-        Returns:
-            Tuple of (decoded content, detected encoding)
-        """
-        # BOM detection
-        bom_encoding = detect_bom(file_data)
-        if bom_encoding:
-            try:
-                return file_data.decode(bom_encoding), bom_encoding
-            except UnicodeDecodeError:
-                pass
-        
-        # Try preferred encoding
-        if preferred_encoding:
-            try:
-                return file_data.decode(preferred_encoding), preferred_encoding
-            except UnicodeDecodeError:
-                self.logger.debug(f"Preferred encoding {preferred_encoding} failed")
-        
-        # Try chardet if available
-        try:
-            import chardet
-            detected = chardet.detect(file_data)
-            if detected and detected.get('encoding'):
-                enc = detected['encoding']
-                try:
-                    return file_data.decode(enc), enc
-                except UnicodeDecodeError:
-                    pass
-        except ImportError:
-            pass
-        
-        # Try encoding candidates
-        for enc in ENCODING_CANDIDATES:
-            try:
-                return file_data.decode(enc), enc
-            except UnicodeDecodeError:
-                continue
-        
-        # Fallback to latin-1 (always succeeds)
-        return file_data.decode('latin-1'), 'latin-1'

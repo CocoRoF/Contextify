@@ -25,6 +25,11 @@ DEFAULT_ENCODINGS = ['utf-8', 'utf-8-sig', 'cp949', 'euc-kr', 'latin-1', 'ascii'
 class TextHandler(BaseHandler):
     """Text File Processing Handler Class"""
     
+    def _create_file_converter(self):
+        """Create text-specific file converter."""
+        from contextifier.core.processor.text_helper.text_file_converter import TextFileConverter
+        return TextFileConverter()
+    
     def _create_chart_extractor(self) -> BaseChartExtractor:
         """Text files do not contain charts. Return NullChartExtractor."""
         return NullChartExtractor(self._chart_processor)
