@@ -8,7 +8,7 @@ import logging
 import re
 from typing import List, Tuple
 
-from contextifier.core.processor.doc_helpers.rtf_constants import (
+from contextifier.core.processor.rtf_helper.rtf_constants import (
     EXCLUDE_DESTINATION_KEYWORDS,
 )
 

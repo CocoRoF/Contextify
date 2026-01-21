@@ -1,4 +1,4 @@
-# service/document_processor/processor/doc_helpers/rtf_parser.py
+# contextifier/core/processor/rtf_helper/rtf_parser.py
 """
 RTF Parser - RTF 파일 바이너리 직접 파싱 (리팩터링 버전)
 
@@ -20,7 +20,7 @@ RTF 1.5+ 스펙 기반 구현
 - rtf_table_extractor.py: 테이블 추출/파싱
 - rtf_content_extractor.py: 인라인 콘텐츠 추출
 - rtf_region_finder.py: 제외 영역 탐색
-- rtf_bin_processor.py: 바이너리 전처리
+- rtf_image_processor.py: 이미지 처리 및 바이너리 전처리
 """
 import logging
 from typing import Optional, Set
@@ -28,7 +28,7 @@ from typing import Optional, Set
 from contextifier.core.functions.img_processor import ImageProcessor
 
 # 모델 임포트 (외부에서 사용할 수 있도록)
-from contextifier.core.processor.doc_helpers.rtf_models import (
+from contextifier.core.processor.rtf_helper.rtf_models import (
     RTFCellInfo,
     RTFTable,
     RTFContentPart,
@@ -36,37 +36,37 @@ from contextifier.core.processor.doc_helpers.rtf_models import (
 )
 
 # 디코더 임포트
-from contextifier.core.processor.doc_helpers.rtf_decoder import (
+from contextifier.core.processor.rtf_helper.rtf_decoder import (
     detect_encoding,
     decode_content,
     decode_hex_escapes,
 )
 
 # Text cleaner import
-from contextifier.core.processor.doc_helpers.rtf_text_cleaner import (
+from contextifier.core.processor.rtf_helper.rtf_text_cleaner import (
     clean_rtf_text,
     remove_shprslt_blocks,
 )
 
 # Metadata extractor import
-from contextifier.core.processor.doc_helpers.rtf_metadata_extractor import (
+from contextifier.core.processor.rtf_helper.rtf_metadata_extractor import (
     DOCMetadataExtractor,
     RTFSourceInfo,
 )
 
 # 테이블 추출기 임포트
-from contextifier.core.processor.doc_helpers.rtf_table_extractor import (
+from contextifier.core.processor.rtf_helper.rtf_table_extractor import (
     extract_tables_with_positions,
 )
 
 # 콘텐츠 추출기 임포트
-from contextifier.core.processor.doc_helpers.rtf_content_extractor import (
+from contextifier.core.processor.rtf_helper.rtf_content_extractor import (
     extract_inline_content,
     extract_text_legacy,
 )
 
-# 바이너리 처리기 임포트
-from contextifier.core.processor.doc_helpers.rtf_bin_processor import (
+# 이미지 처리기 임포트 (바이너리 전처리 포함)
+from contextifier.core.processor.rtf_helper.rtf_image_processor import (
     preprocess_rtf_binary,
 )
 

@@ -7,10 +7,10 @@ RTF 제어 코드 제거 및 텍스트 정리 관련 함수들을 제공합니�
 import re
 from typing import List
 
-from contextifier.core.processor.doc_helpers.rtf_constants import (
+from contextifier.core.processor.rtf_helper.rtf_constants import (
     SHAPE_PROPERTY_NAMES,
 )
-from contextifier.core.processor.doc_helpers.rtf_decoder import (
+from contextifier.core.processor.rtf_helper.rtf_decoder import (
     decode_bytes,
 )
 

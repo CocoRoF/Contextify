@@ -4,28 +4,23 @@ DOC Handler - Legacy Microsoft Word Document Processor
 
 Class-based handler for DOC files inheriting from BaseHandler.
 Automatically detects file format (RTF, OLE, HTML, DOCX) and processes accordingly.
+RTF processing is delegated to RTFHandler.
 """
 import io
 import logging
 import os
 import re
-import shutil
-import tempfile
 import struct
 import base64
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 from enum import Enum
 import zipfile
 
 import olefile
 from bs4 import BeautifulSoup
-from striprtf.striprtf import rtf_to_text
 
-from contextifier.core.processor.doc_helpers.rtf_parser import parse_rtf, RTFDocument
-from contextifier.core.processor.doc_helpers.rtf_metadata_extractor import (
+from contextifier.core.processor.rtf_helper.rtf_metadata_extractor import (
     DOCMetadataExtractor,
-    RTFSourceInfo,
 )
 from contextifier.core.processor.base_handler import BaseHandler
 from contextifier.core.functions.img_processor import ImageProcessor
@@ -95,7 +90,8 @@ class DOCHandler(BaseHandler):
             converted_obj, doc_format = self.file_converter.convert(file_data)
             
             if doc_format == DocFormat.RTF:
-                return self._extract_from_rtf_obj(converted_obj, current_file, extract_metadata)
+                # Delegate to RTFHandler for RTF processing
+                return self._delegate_to_rtf_handler(converted_obj, current_file, extract_metadata)
             elif doc_format == DocFormat.OLE:
                 return self._extract_from_ole_obj(converted_obj, current_file, extract_metadata)
             elif doc_format == DocFormat.HTML:
@@ -109,153 +105,28 @@ class DOCHandler(BaseHandler):
             self.logger.error(f"Error in DOC processing: {e}")
             return f"[DOC file processing failed: {str(e)}]"
     
-    def _extract_from_rtf_obj(self, rtf_doc, current_file: "CurrentFile", extract_metadata: bool) -> str:
-        """RTF file processing using pre-converted RTF document."""
-        file_path = current_file.get("file_path", "unknown")
+    def _delegate_to_rtf_handler(self, rtf_doc, current_file: "CurrentFile", extract_metadata: bool) -> str:
+        """
+        Delegate RTF processing to RTFHandler.
         
-        self.logger.info(f"Processing RTF: {file_path}")
+        Args:
+            rtf_doc: Pre-converted RTFDocument object
+            current_file: CurrentFile dict
+            extract_metadata: Whether to extract metadata
+            
+        Returns:
+            Extracted text
+        """
+        from contextifier.core.processor.rtf_handler import RTFHandler
         
-        try:
-            result_parts = []
-            
-            if extract_metadata:
-                metadata_str = self.extract_and_format_metadata(rtf_doc.metadata)
-                if metadata_str:
-                    result_parts.append(metadata_str + "\n\n")
-            
-            page_tag = self.create_page_tag(1)
-            result_parts.append(f"{page_tag}\n")
-            
-            inline_content = rtf_doc.get_inline_content()
-            if inline_content:
-                result_parts.append(inline_content)
-            else:
-                if rtf_doc.text_content:
-                    result_parts.append(rtf_doc.text_content)
-                
-                for table in rtf_doc.tables:
-                    if not table.rows:
-                        continue
-                    if table.is_real_table():
-                        result_parts.append("\n" + table.to_html() + "\n")
-                    else:
-                        result_parts.append("\n" + table.to_text_list() + "\n")
-            
-            result = "\n".join(result_parts)
-            result = re.sub(r'\[image:[^\]]*uploads/\.[^\]]*\]', '', result)
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"RTF processing error: {e}")
-            return self._extract_from_rtf(current_file, extract_metadata)
-    
-    def _extract_from_rtf(self, current_file: "CurrentFile", extract_metadata: bool) -> str:
-        """RTF file processing fallback - re-parse from bytes."""
-        file_path = current_file.get("file_path", "unknown")
-        file_data = current_file.get("file_data", b"")
+        rtf_handler = RTFHandler(
+            config=self.config,
+            image_processor=self._image_processor,
+            page_tag_processor=self._page_tag_processor,
+            chart_processor=self._chart_processor
+        )
         
-        self.logger.info(f"Processing RTF: {file_path}")
-        
-        try:
-            content = file_data
-            
-            processed_images: Set[str] = set()
-            doc = parse_rtf(content, processed_images=processed_images, image_processor=self.format_image_processor)
-            
-            result_parts = []
-            
-            if extract_metadata:
-                metadata_str = self.extract_and_format_metadata(doc.metadata)
-                if metadata_str:
-                    result_parts.append(metadata_str + "\n\n")
-            
-            page_tag = self.create_page_tag(1)
-            result_parts.append(f"{page_tag}\n")
-            
-            inline_content = doc.get_inline_content()
-            if inline_content:
-                result_parts.append(inline_content)
-            else:
-                if doc.text_content:
-                    result_parts.append(doc.text_content)
-                
-                for table in doc.tables:
-                    if not table.rows:
-                        continue
-                    if table.is_real_table():
-                        result_parts.append("\n" + table.to_html() + "\n")
-                    else:
-                        result_parts.append("\n" + table.to_text_list() + "\n")
-            
-            result = "\n".join(result_parts)
-            result = re.sub(r'\[image:[^\]]*uploads/\.[^\]]*\]', '', result)
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"RTF processing error: {e}")
-            return self._extract_rtf_fallback(current_file, extract_metadata)
-    
-    def _extract_rtf_fallback(self, current_file: "CurrentFile", extract_metadata: bool) -> str:
-        """RTF fallback (striprtf)."""
-        file_data = current_file.get("file_data", b"")
-        
-        content = None
-        for encoding in ['utf-8', 'cp949', 'euc-kr', 'cp1252', 'latin-1']:
-            try:
-                content = file_data.decode(encoding)
-                break
-            except (UnicodeDecodeError, UnicodeError):
-                continue
-        
-        if content is None:
-            content = file_data.decode('cp1252', errors='replace')
-        
-        result_parts = []
-        
-        if extract_metadata:
-            metadata = self._extract_rtf_metadata(content)
-            metadata_str = self.extract_and_format_metadata(metadata)
-            if metadata_str:
-                result_parts.append(metadata_str + "\n\n")
-        
-        page_tag = self.create_page_tag(1)
-        result_parts.append(f"{page_tag}\n")
-        
-        try:
-            text = rtf_to_text(content)
-        except:
-            text = re.sub(r'\\[a-z]+\d*\s?', '', content)
-            text = re.sub(r"\\'[0-9a-fA-F]{2}", '', text)
-            text = re.sub(r'[{}]', '', text)
-        
-        if text:
-            text = re.sub(r'\n{3,}', '\n\n', text)
-            result_parts.append(text.strip())
-        
-        return "\n".join(result_parts)
-    
-    def _extract_rtf_metadata(self, content: str) -> Dict[str, Any]:
-        """RTF metadata extraction."""
-        metadata = {}
-        patterns = {
-            'title': r'\\title\s*\{([^}]*)\}',
-            'subject': r'\\subject\s*\{([^}]*)\}',
-            'author': r'\\author\s*\{([^}]*)\}',
-            'keywords': r'\\keywords\s*\{([^}]*)\}',
-            'comments': r'\\doccomm\s*\{([^}]*)\}',
-            'last_saved_by': r'\\operator\s*\{([^}]*)\}',
-        }
-        
-        for key, pattern in patterns.items():
-            match = re.search(pattern, content, re.IGNORECASE)
-            if match:
-                value = match.group(1).strip()
-                if value:
-                    metadata[key] = value
-        
-        return metadata
+        return rtf_handler.extract_from_rtf_document(rtf_doc, current_file, extract_metadata)
     
     def _extract_from_ole_obj(self, ole, current_file: "CurrentFile", extract_metadata: bool) -> str:
         """OLE Compound Document processing using pre-converted OLE object."""

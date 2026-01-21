@@ -8,20 +8,20 @@ import logging
 import re
 from typing import List, Tuple
 
-from contextifier.core.processor.doc_helpers.rtf_models import (
+from contextifier.core.processor.rtf_helper.rtf_models import (
     RTFTable,
     RTFContentPart,
 )
-from contextifier.core.processor.doc_helpers.rtf_decoder import (
+from contextifier.core.processor.rtf_helper.rtf_decoder import (
     decode_hex_escapes,
 )
-from contextifier.core.processor.doc_helpers.rtf_text_cleaner import (
+from contextifier.core.processor.rtf_helper.rtf_text_cleaner import (
     clean_rtf_text,
     remove_destination_groups,
     remove_shape_groups,
     remove_shape_property_groups,
 )
-from contextifier.core.processor.doc_helpers.rtf_region_finder import (
+from contextifier.core.processor.rtf_helper.rtf_region_finder import (
     find_excluded_regions,
 )
 
