@@ -47,7 +47,7 @@ from contextifier.core.processor.text_handler import TextHandler
 
 # === HWP Handlers ===
 from contextifier.core.processor.hwp_handler import HWPHandler
-from contextifier.core.processor.hwps_handler import HWPXHandler
+from contextifier.core.processor.hwpx_handler import HWPXHandler
 
 # === Other Processors ===
 # from contextifier.core.processor.html_reprocessor import ...  # HTML reprocessing

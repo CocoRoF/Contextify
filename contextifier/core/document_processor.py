@@ -1066,7 +1066,7 @@ class DocumentProcessor:
 
         # HWPX handler
         try:
-            from contextifier.core.processor.hwps_handler import HWPXHandler
+            from contextifier.core.processor.hwpx_handler import HWPXHandler
             hwpx_handler = HWPXHandler(
                 config=self._config,
                 image_processor=self._image_processor,

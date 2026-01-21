@@ -165,7 +165,7 @@ class HWPHandler(BaseHandler):
         # Check if it's a ZIP file (HWPX)
         if file_data[:4] == b'PK\x03\x04':
             self.logger.info(f"File {file_path} is a Zip file. Processing as HWPX.")
-            from contextifier.core.processor.hwps_handler import HWPXHandler
+            from contextifier.core.processor.hwpx_handler import HWPXHandler
             hwpx_handler = HWPXHandler(config=self.config, image_processor=self.format_image_processor)
             return hwpx_handler.extract_text(current_file, extract_metadata=extract_metadata)
         
