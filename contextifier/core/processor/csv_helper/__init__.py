@@ -28,6 +28,11 @@ from contextifier.core.processor.csv_helper.csv_metadata import (
     CSVSourceInfo,
 )
 
+# Image Processor
+from contextifier.core.processor.csv_helper.csv_image_processor import (
+    CSVImageProcessor,
+)
+
 # Encoding
 from contextifier.core.processor.csv_helper.csv_encoding import (
     detect_bom,
@@ -61,10 +66,11 @@ __all__ = [
     "MAX_COLS",
     "CSVMetadata",
     # Metadata
-    "format_file_size",
-    "get_delimiter_name",
-    "extract_csv_metadata",
-    "format_metadata",
+    "CSVMetadataExtractor",
+    "CSVSourceInfo",
+    # Image Processor
+    "CSVImageProcessor",
+    # Encoding
     # Encoding
     "detect_bom",
     "read_file_with_encoding",

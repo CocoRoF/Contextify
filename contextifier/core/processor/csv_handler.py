@@ -18,6 +18,8 @@ from contextifier.core.processor.csv_helper import (
     convert_rows_to_table,
 )
 from contextifier.core.processor.csv_helper.csv_metadata import CSVMetadataExtractor, CSVSourceInfo
+from contextifier.core.processor.csv_helper.csv_image_processor import CSVImageProcessor
+from contextifier.core.functions.img_processor import ImageProcessor
 
 if TYPE_CHECKING:
     from contextifier.core.document_processor import CurrentFile
@@ -38,6 +40,10 @@ class CSVHandler(BaseHandler):
     def _create_metadata_extractor(self):
         """Create CSV-specific metadata extractor."""
         return CSVMetadataExtractor()
+    
+    def _create_format_image_processor(self) -> ImageProcessor:
+        """Create CSV-specific image processor."""
+        return CSVImageProcessor()
     
     def extract_text(
         self,

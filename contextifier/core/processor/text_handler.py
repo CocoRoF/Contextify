@@ -10,6 +10,8 @@ from typing import List, Optional, TYPE_CHECKING
 from contextifier.core.processor.base_handler import BaseHandler
 from contextifier.core.functions.utils import clean_text, clean_code_text
 from contextifier.core.functions.chart_extractor import BaseChartExtractor, NullChartExtractor
+from contextifier.core.processor.text_helper.text_image_processor import TextImageProcessor
+from contextifier.core.functions.img_processor import ImageProcessor
 
 if TYPE_CHECKING:
     from contextifier.core.document_processor import CurrentFile
@@ -30,6 +32,10 @@ class TextHandler(BaseHandler):
     def _create_metadata_extractor(self):
         """Text files do not have embedded metadata. Return None (uses NullMetadataExtractor)."""
         return None
+    
+    def _create_format_image_processor(self) -> ImageProcessor:
+        """Create text-specific image processor."""
+        return TextImageProcessor()
     
     def extract_text(
         self,

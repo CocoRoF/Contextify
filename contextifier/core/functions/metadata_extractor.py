@@ -195,8 +195,8 @@ class MetadataFormatter:
     as strings for inclusion in extracted text output.
     
     Attributes:
-        tag_open: Opening tag for metadata section (default: "<Document-Metadata>")
-        tag_close: Closing tag for metadata section (default: "</Document-Metadata>")
+        metadata_tag_prefix: Opening tag for metadata section (default: "<Document-Metadata>")
+        metadata_tag_suffix: Closing tag for metadata section (default: "</Document-Metadata>")
         field_labels: Dictionary mapping field names to display labels
         date_format: Date/time format string
         language: Output language ('ko' for Korean, 'en' for English)
@@ -269,8 +269,8 @@ class MetadataFormatter:
     
     def __init__(
         self,
-        tag_open: str = "<Document-Metadata>",
-        tag_close: str = "</Document-Metadata>",
+        metadata_tag_prefix: str = "<Document-Metadata>",
+        metadata_tag_suffix: str = "</Document-Metadata>",
         date_format: str = "%Y-%m-%d %H:%M:%S",
         language: str = "ko",
         indent: str = "  ",
@@ -279,14 +279,14 @@ class MetadataFormatter:
         Initialize MetadataFormatter.
         
         Args:
-            tag_open: Opening tag for metadata section
-            tag_close: Closing tag for metadata section
+            metadata_tag_prefix: Opening tag for metadata section
+            metadata_tag_suffix: Closing tag for metadata section
             date_format: strftime format for datetime values
             language: Output language ('ko' or 'en')
             indent: Indentation string for each field
         """
-        self.tag_open = tag_open
-        self.tag_close = tag_close
+        self.metadata_tag_prefix = metadata_tag_prefix
+        self.metadata_tag_suffix = metadata_tag_suffix
         self.date_format = date_format
         self.language = language
         self.indent = indent
@@ -311,7 +311,7 @@ class MetadataFormatter:
         if not data:
             return ""
         
-        lines = [self.tag_open]
+        lines = [self.metadata_tag_prefix]
         
         # Output standard fields in order
         for field_name in self.FIELD_ORDER:
@@ -327,7 +327,7 @@ class MetadataFormatter:
             if formatted_line:
                 lines.append(formatted_line)
         
-        lines.append(self.tag_close)
+        lines.append(self.metadata_tag_suffix)
         
         return "\n".join(lines)
     

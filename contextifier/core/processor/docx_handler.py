@@ -51,6 +51,7 @@ from contextifier.core.processor.docx_helper import (
     process_paragraph_element,
 )
 from contextifier.core.processor.docx_helper.docx_metadata import DOCXMetadataExtractor
+from contextifier.core.processor.docx_helper.docx_image_processor import DOCXImageProcessor
 
 logger = logging.getLogger("document-processor")
 
@@ -83,6 +84,15 @@ class DOCXHandler(BaseHandler):
     def _create_metadata_extractor(self):
         """Create DOCX-specific metadata extractor."""
         return DOCXMetadataExtractor()
+    
+    def _create_format_image_processor(self):
+        """Create DOCX-specific image processor."""
+        return DOCXImageProcessor(
+            directory_path=self._image_processor.config.directory_path,
+            tag_prefix=self._image_processor.config.tag_prefix,
+            tag_suffix=self._image_processor.config.tag_suffix,
+            storage_backend=self._image_processor.storage_backend,
+        )
     
     def extract_text(
         self,
@@ -140,7 +150,7 @@ class DOCXHandler(BaseHandler):
             
             doc_handler = DOCHandler(
                 config=self.config,
-                image_processor=self.image_processor
+                image_processor=self.format_image_processor
             )
             
             # DOCHandler still uses file_path, so pass it directly
@@ -248,7 +258,7 @@ class DOCXHandler(BaseHandler):
                     # Paragraph processing - pass chart_callback for pre-extracted charts
                     content, has_page_break, img_count, chart_count = process_paragraph_element(
                         body_elem, doc, processed_images, file_path,
-                        image_processor=self.image_processor,
+                        image_processor=self.format_image_processor,
                         chart_callback=get_next_chart
                     )
 

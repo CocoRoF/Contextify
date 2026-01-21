@@ -12,6 +12,8 @@ from typing import Any, Optional, TYPE_CHECKING
 
 from contextifier.core.processor.base_handler import BaseHandler
 from contextifier.core.functions.chart_extractor import BaseChartExtractor, NullChartExtractor
+from contextifier.core.processor.image_file_helper.image_file_image_processor import ImageFileImageProcessor
+from contextifier.core.functions.img_processor import ImageProcessor
 
 if TYPE_CHECKING:
     from contextifier.core.document_processor import CurrentFile
@@ -51,6 +53,10 @@ class ImageFileHandler(BaseHandler):
     def _create_metadata_extractor(self):
         """Image files do not have document metadata. Return None (uses NullMetadataExtractor)."""
         return None
+    
+    def _create_format_image_processor(self) -> ImageProcessor:
+        """Create image-file-specific image processor."""
+        return ImageFileImageProcessor()
     
     def __init__(
         self,

@@ -1,17 +1,19 @@
 # libs/core/functions/__init__.py
 """
-Functions - 공통 유틸리티 함수 모듈
+Functions - Common Utility Functions Module
 
-문서 처리에 사용되는 공통 유틸리티 함수들을 제공합니다.
+Provides common utility functions used in document processing.
 
-모듈 구성:
-- utils: 텍스트 정리, 코드 정리, JSON 정리 등 유틸리티 함수
-- img_processor: 이미지 처리 및 저장 (ImageProcessor 클래스)
-- ppt2pdf: PPT를 PDF로 변환하는 함수
+Module Components:
+- utils: Text cleaning, code cleaning, JSON sanitization utilities
+- img_processor: Image processing and storage (ImageProcessor class)
+- storage_backend: Storage backend implementations (Local, MinIO, S3)
+- metadata_extractor: Document metadata extraction interface
 
-사용 예시:
+Usage Example:
     from contextifier.core.functions import clean_text, clean_code_text
     from contextifier.core.functions import ImageProcessor, save_image_to_file
+    from contextifier.core.functions.storage_backend import LocalStorageBackend
     from contextifier.core.functions.utils import sanitize_text_for_json
 """
 
@@ -21,7 +23,18 @@ from contextifier.core.functions.utils import (
     sanitize_text_for_json,
 )
 
-# 이미지 처리 모듈
+# Storage backend module
+from contextifier.core.functions.storage_backend import (
+    StorageType,
+    BaseStorageBackend,
+    LocalStorageBackend,
+    MinIOStorageBackend,
+    S3StorageBackend,
+    create_storage_backend,
+    get_default_backend,
+)
+
+# Image processor module
 from contextifier.core.functions.img_processor import (
     ImageProcessor,
     ImageProcessorConfig,
@@ -29,9 +42,10 @@ from contextifier.core.functions.img_processor import (
     NamingStrategy,
     save_image_to_file,
     create_image_processor,
+    DEFAULT_IMAGE_CONFIG,
 )
 
-# 메타데이터 추출 모듈
+# Metadata extraction module
 from contextifier.core.functions.metadata_extractor import (
     MetadataField,
     DocumentMetadata,
@@ -41,18 +55,27 @@ from contextifier.core.functions.metadata_extractor import (
 )
 
 __all__ = [
-    # 텍스트 유틸리티
+    # Text utilities
     "clean_text",
     "clean_code_text",
     "sanitize_text_for_json",
-    # 이미지 처리
+    # Storage backends
+    "StorageType",
+    "BaseStorageBackend",
+    "LocalStorageBackend",
+    "MinIOStorageBackend",
+    "S3StorageBackend",
+    "create_storage_backend",
+    "get_default_backend",
+    # Image processor (base class for all format-specific processors)
     "ImageProcessor",
     "ImageProcessorConfig",
     "ImageFormat",
     "NamingStrategy",
     "save_image_to_file",
     "create_image_processor",
-    # 메타데이터 추출
+    "DEFAULT_IMAGE_CONFIG",
+    # Metadata extraction
     "MetadataField",
     "DocumentMetadata",
     "MetadataFormatter",

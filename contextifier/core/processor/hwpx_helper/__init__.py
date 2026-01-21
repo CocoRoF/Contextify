@@ -40,10 +40,9 @@ from contextifier.core.processor.hwpx_helper.hwpx_section import (
     parse_hwpx_section,
 )
 
-# Image
-from contextifier.core.processor.hwpx_helper.hwpx_image import (
-    process_hwpx_images,
-    get_remaining_images,
+# Image Processor (replaces hwpx_image.py utility functions)
+from contextifier.core.processor.hwpx_helper.hwpx_image_processor import (
+    HWPXImageProcessor,
 )
 
 # Chart Extractor
@@ -60,16 +59,15 @@ __all__ = [
     "HEADER_FILE_PATHS",
     "HPF_PATH",
     # Metadata
-    "extract_hwpx_metadata",
+    "HWPXMetadataExtractor",
     "parse_bin_item_map",
     # Table
     "parse_hwpx_table",
     "extract_cell_content",
     # Section
     "parse_hwpx_section",
-    # Image
-    "process_hwpx_images",
-    "get_remaining_images",
+    # Image Processor
+    "HWPXImageProcessor",
     # Chart Extractor
     "HWPXChartExtractor",
 ]

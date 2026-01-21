@@ -28,6 +28,7 @@ from contextifier.core.processor.ppt_helper import (
 )
 from contextifier.core.processor.ppt_helper.ppt_chart_extractor import PPTChartExtractor
 from contextifier.core.processor.ppt_helper.ppt_metadata import PPTMetadataExtractor
+from contextifier.core.processor.ppt_helper.ppt_image_processor import PPTImageProcessor
 
 if TYPE_CHECKING:
     from contextifier.core.document_processor import CurrentFile
@@ -46,6 +47,15 @@ class PPTHandler(BaseHandler):
     def _create_metadata_extractor(self):
         """Create PPT-specific metadata extractor."""
         return PPTMetadataExtractor()
+    
+    def _create_format_image_processor(self):
+        """Create PPT-specific image processor."""
+        return PPTImageProcessor(
+            directory_path=self._image_processor.config.directory_path,
+            tag_prefix=self._image_processor.config.tag_prefix,
+            tag_suffix=self._image_processor.config.tag_suffix,
+            storage_backend=self._image_processor.storage_backend,
+        )
     
     def extract_text(
         self,
@@ -135,7 +145,7 @@ class PPTHandler(BaseHandler):
                                     ))
                         
                         elif is_picture_shape(shape):
-                            image_tag = process_image_shape(shape, processed_images, self.image_processor)
+                            image_tag = process_image_shape(shape, processed_images, self.format_image_processor)
                             if image_tag:
                                 total_images += 1
                                 elements.append(SlideElement(
@@ -176,7 +186,7 @@ class PPTHandler(BaseHandler):
                             ))
                         
                         elif hasattr(shape, "shapes"):
-                            group_elements = process_group_shape(shape, processed_images, self.image_processor)
+                            group_elements = process_group_shape(shape, processed_images, self.format_image_processor)
                             elements.extend(group_elements)
                     
                     except Exception as shape_e:

@@ -30,11 +30,9 @@ from contextifier.core.processor.excel_helper.excel_chart_extractor import (
     CHART_TYPE_MAP,
 )
 
-# === Image ===
-from contextifier.core.processor.excel_helper.excel_image import (
-    extract_images_from_xlsx,
-    get_sheet_images,
-    SUPPORTED_IMAGE_EXTENSIONS,
+# === Image Processor (replaces excel_image.py utility functions) ===
+from contextifier.core.processor.excel_helper.excel_image_processor import (
+    ExcelImageProcessor,
 )
 
 # === Table XLSX ===
@@ -76,10 +74,8 @@ __all__ = [
     'CHART_TYPE_MAP',
     # Chart Extractor
     'ExcelChartExtractor',
-    # Image
-    'extract_images_from_xlsx',
-    'get_sheet_images',
-    'SUPPORTED_IMAGE_EXTENSIONS',
+    # Image Processor
+    'ExcelImageProcessor',
     # Table XLSX
     'has_merged_cells_xlsx',
     'convert_xlsx_sheet_to_table',

@@ -30,6 +30,7 @@ from contextifier.core.processor.doc_helpers.rtf_metadata_extractor import (
 from contextifier.core.processor.base_handler import BaseHandler
 from contextifier.core.functions.img_processor import ImageProcessor
 from contextifier.core.functions.chart_extractor import BaseChartExtractor, NullChartExtractor
+from contextifier.core.processor.doc_helpers.doc_image_processor import DOCImageProcessor
 
 if TYPE_CHECKING:
     from contextifier.core.document_processor import CurrentFile
@@ -74,6 +75,10 @@ class DOCHandler(BaseHandler):
     def _create_metadata_extractor(self):
         """Create DOC-specific metadata extractor."""
         return DOCMetadataExtractor()
+    
+    def _create_format_image_processor(self) -> ImageProcessor:
+        """Create DOC-specific image processor."""
+        return DOCImageProcessor()
     
     def extract_text(
         self,
@@ -165,7 +170,7 @@ class DOCHandler(BaseHandler):
             content = file_data
             
             processed_images: Set[str] = set()
-            doc = parse_rtf(content, processed_images=processed_images, image_processor=self.image_processor)
+            doc = parse_rtf(content, processed_images=processed_images, image_processor=self.format_image_processor)
             
             result_parts = []
             
@@ -353,7 +358,7 @@ class DOCHandler(BaseHandler):
                         
                         if data[:8] == b'\x89PNG\r\n\x1a\n' or data[:2] == b'\xff\xd8' or \
                            data[:6] in (b'GIF87a', b'GIF89a') or data[:2] == b'BM':
-                            image_tag = self.image_processor.save_image(data)
+                            image_tag = self.format_image_processor.save_image(data)
                             if image_tag:
                                 images.append(f"\n{image_tag}\n")
                     except:
@@ -414,7 +419,7 @@ class DOCHandler(BaseHandler):
                     match = re.match(r'data:image/(\w+);base64,(.+)', src)
                     if match:
                         image_data = base64.b64decode(match.group(2))
-                        image_tag = self.image_processor.save_image(image_data)
+                        image_tag = self.format_image_processor.save_image(image_data)
                         if image_tag:
                             result_parts.append(f"\n{image_tag}\n")
                 except:
@@ -452,7 +457,7 @@ class DOCHandler(BaseHandler):
             from contextifier.core.processor.docx_handler import DOCXHandler
             
             # Pass current_file directly - DOCXHandler now accepts CurrentFile
-            docx_handler = DOCXHandler(config=self.config, image_processor=self.image_processor)
+            docx_handler = DOCXHandler(config=self.config, image_processor=self.format_image_processor)
             return docx_handler.extract_text(current_file, extract_metadata=extract_metadata)
         except Exception as e:
             self.logger.error(f"Error processing misnamed DOCX: {e}")

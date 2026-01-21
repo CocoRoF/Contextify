@@ -59,11 +59,11 @@ if TYPE_CHECKING:
 from contextifier.core.processor.pdf_helpers.pdf_metadata import (
     PDFMetadataExtractor,
 )
+from contextifier.core.processor.pdf_helpers.pdf_image_processor import (
+    PDFImageProcessor,
+)
 from contextifier.core.processor.pdf_helpers.pdf_utils import (
     bbox_overlaps,
-)
-from contextifier.core.processor.pdf_helpers.pdf_image import (
-    extract_images_from_page,
 )
 from contextifier.core.processor.pdf_helpers.pdf_text_extractor import (
     extract_text_blocks,
@@ -140,6 +140,15 @@ class PDFHandler(BaseHandler):
     def _create_metadata_extractor(self):
         """Create PDF-specific metadata extractor."""
         return PDFMetadataExtractor()
+    
+    def _create_format_image_processor(self):
+        """Create PDF-specific image processor."""
+        return PDFImageProcessor(
+            directory_path=self._image_processor.config.directory_path,
+            tag_prefix=self._image_processor.config.tag_prefix,
+            tag_suffix=self._image_processor.config.tag_suffix,
+            storage_backend=self._image_processor.storage_backend,
+        )
     
     def extract_text(
         self,
@@ -328,7 +337,7 @@ class PDFHandler(BaseHandler):
                 page_elements.append(elem)
 
         if complex_bboxes:
-            block_engine = BlockImageEngine(page, page_num, image_processor=self.image_processor)
+            block_engine = BlockImageEngine(page, page_num, image_processor=self.format_image_processor)
 
             for complex_bbox in complex_bboxes:
                 result = block_engine.process_region(complex_bbox, region_type="complex_region")
@@ -363,7 +372,7 @@ class PDFHandler(BaseHandler):
         table_bboxes = [elem.bbox for elem in page_tables]
 
         if complex_regions:
-            block_engine = BlockImageEngine(page, page_num, image_processor=self.image_processor)
+            block_engine = BlockImageEngine(page, page_num, image_processor=self.format_image_processor)
 
             for complex_bbox in complex_regions:
                 if any(bbox_overlaps(complex_bbox, tb) for tb in table_bboxes):
@@ -445,7 +454,7 @@ class PDFHandler(BaseHandler):
             return merge_page_elements(page_elements)
 
         # Smart block processing
-        block_engine = BlockImageEngine(page, page_num, image_processor=self.image_processor)
+        block_engine = BlockImageEngine(page, page_num, image_processor=self.format_image_processor)
         multi_result: MultiBlockResult = block_engine.process_page_smart()
 
         if multi_result.success and multi_result.block_results:
@@ -503,12 +512,25 @@ class PDFHandler(BaseHandler):
         min_image_size: int = 50,
         min_image_area: int = 2500
     ) -> List[PageElement]:
-        """Extract images from page using instance's image_processor."""
-        return extract_images_from_page(
-            page, page_num, doc, processed_images, table_bboxes,
-            image_processor=self.image_processor,
-            min_image_size=min_image_size, min_image_area=min_image_area
-        )
+        """Extract images from page using instance's format_image_processor."""
+        # Use PDFImageProcessor's integrated method
+        image_processor = self.format_image_processor
+        if hasattr(image_processor, 'extract_images_from_page'):
+            elements_dicts = image_processor.extract_images_from_page(
+                page, page_num, doc, processed_images, table_bboxes,
+                min_image_size=min_image_size, min_image_area=min_image_area
+            )
+            # Convert dicts to PageElement
+            return [
+                PageElement(
+                    element_type=ElementType.IMAGE,
+                    content=e['content'],
+                    bbox=e['bbox'],
+                    page_num=e['page_num']
+                )
+                for e in elements_dicts
+            ]
+        return []
 
 
 # ============================================================================

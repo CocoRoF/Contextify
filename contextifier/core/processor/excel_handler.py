@@ -31,9 +31,6 @@ if TYPE_CHECKING:
 from contextifier.core.processor.excel_helper import (
     # Textbox
     extract_textboxes_from_xlsx,
-    # Image
-    extract_images_from_xlsx,
-    get_sheet_images,
     # Table
     convert_xlsx_sheet_to_table,
     convert_xls_sheet_to_table,
@@ -44,6 +41,9 @@ from contextifier.core.processor.excel_helper import (
 from contextifier.core.processor.excel_helper.excel_metadata import (
     XLSXMetadataExtractor,
     XLSMetadataExtractor,
+)
+from contextifier.core.processor.excel_helper.excel_image_processor import (
+    ExcelImageProcessor,
 )
 
 import xlrd
@@ -79,6 +79,15 @@ class ExcelHandler(BaseHandler):
     def _create_metadata_extractor(self):
         """Create XLSX-specific metadata extractor (default)."""
         return XLSXMetadataExtractor()
+    
+    def _create_format_image_processor(self):
+        """Create Excel-specific image processor."""
+        return ExcelImageProcessor(
+            directory_path=self._image_processor.config.directory_path,
+            tag_prefix=self._image_processor.config.tag_prefix,
+            tag_suffix=self._image_processor.config.tag_suffix,
+            storage_backend=self._image_processor.storage_backend,
+        )
     
     def _get_xls_metadata_extractor(self):
         """Get XLS-specific metadata extractor."""
@@ -227,8 +236,12 @@ class ExcelHandler(BaseHandler):
         # Use ChartExtractor for chart extraction
         result["chart_data_list"] = self.chart_extractor.extract_all_from_file(file_stream)
         
-        # NOTE: These helper functions still require file_path for now
-        result["images_data"] = extract_images_from_xlsx(file_path)
+        # Use format_image_processor directly for image extraction
+        image_processor = self.format_image_processor
+        if hasattr(image_processor, 'extract_images_from_xlsx'):
+            result["images_data"] = image_processor.extract_images_from_xlsx(file_path)
+        else:
+            result["images_data"] = {}
         result["textboxes_by_sheet"] = extract_textboxes_from_xlsx(file_path)
 
         return result
@@ -262,11 +275,15 @@ class ExcelHandler(BaseHandler):
                         stats["charts"] += 1
                     preload["chart_idx"] += 1
 
-        # Image processing
-        sheet_images = get_sheet_images(ws, preload["images_data"], "")
+        # Image processing - use format_image_processor directly
+        image_processor = self.format_image_processor
+        if hasattr(image_processor, 'get_sheet_images'):
+            sheet_images = image_processor.get_sheet_images(ws, preload["images_data"], "")
+        else:
+            sheet_images = []
         for image_data, anchor in sheet_images:
             if image_data:
-                image_tag = self.image_processor.save_image(image_data)
+                image_tag = self.format_image_processor.save_image(image_data)
                 if image_tag:
                     parts.append(f"\n{image_tag}\n")
                     stats["images"] += 1

@@ -46,3 +46,6 @@ from contextifier.core.processor.doc_helpers.rtf_text_cleaner import *
 
 # Binary Processor
 from contextifier.core.processor.doc_helpers.rtf_bin_processor import *
+
+# Image Processor
+from contextifier.core.processor.doc_helpers.doc_image_processor import DOCImageProcessor

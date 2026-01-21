@@ -3,22 +3,28 @@
 BaseHandler - Abstract base class for document processing handlers
 
 Defines the base interface for all document handlers.
-Manages config, ImageProcessor, PageTagProcessor, ChartProcessor, and MetadataExtractor
-passed from DocumentProcessor at instance level for reuse by internal methods.
+Manages config, ImageProcessor, PageTagProcessor, ChartProcessor, MetadataExtractor,
+and format-specific ImageProcessor passed from DocumentProcessor at instance level
+for reuse by internal methods.
 
 Each handler should override:
 - _create_chart_extractor(): Provide format-specific chart extractor
 - _create_metadata_extractor(): Provide format-specific metadata extractor
+- _create_format_image_processor(): Provide format-specific image processor
 
 Usage Example:
     class PDFHandler(BaseHandler):
         def _create_metadata_extractor(self):
             return PDFMetadataExtractor()
+        
+        def _create_format_image_processor(self):
+            return PDFImageProcessor(image_processor=self._image_processor)
             
         def extract_text(self, current_file: CurrentFile, extract_metadata: bool = True) -> str:
             # Access self.config, self.image_processor, self.page_tag_processor
             # Use self.metadata_extractor.extract(doc) for metadata extraction
             # Use self.chart_extractor.process(chart_element) for chart extraction
+            # Use self.format_image_processor.process_image(data) for image processing
             ...
 """
 import io
@@ -60,18 +66,20 @@ class BaseHandler(ABC):
     Abstract base class for document handlers.
     
     All handlers inherit from this class.
-    config, image_processor, page_tag_processor, chart_processor, and metadata_extractor
-    are passed at creation and stored as instance variables.
+    config, image_processor, page_tag_processor, chart_processor, metadata_extractor,
+    and format_image_processor are passed at creation and stored as instance variables.
     
     Each handler should override:
     - _create_chart_extractor(): Provide format-specific chart extractor
     - _create_metadata_extractor(): Provide format-specific metadata extractor
+    - _create_format_image_processor(): Provide format-specific image processor
     
-    Both extractors are lazy-initialized on first access.
+    All are lazy-initialized on first access.
     
     Attributes:
         config: Configuration dictionary passed from DocumentProcessor
-        image_processor: ImageProcessor instance passed from DocumentProcessor
+        image_processor: Core ImageProcessor instance passed from DocumentProcessor
+        format_image_processor: Format-specific image processor (lazy-initialized)
         page_tag_processor: PageTagProcessor instance passed from DocumentProcessor
         chart_processor: ChartProcessor instance passed from DocumentProcessor
         chart_extractor: Format-specific chart extractor instance
@@ -101,6 +109,7 @@ class BaseHandler(ABC):
         self._chart_processor = chart_processor or self._get_chart_processor_from_config()
         self._chart_extractor: Optional[BaseChartExtractor] = None
         self._metadata_extractor: Optional[BaseMetadataExtractor] = None
+        self._format_image_processor: Optional[ImageProcessor] = None
         self._logger = logging.getLogger(f"document-processor.{self.__class__.__name__}")
     
     def _get_page_tag_processor_from_config(self) -> PageTagProcessor:
@@ -138,6 +147,18 @@ class BaseHandler(ABC):
             BaseMetadataExtractor subclass instance
         """
         return NullMetadataExtractor()
+    
+    def _create_format_image_processor(self) -> ImageProcessor:
+        """
+        Create format-specific image processor.
+        
+        Override this method in subclasses to provide the appropriate
+        image processor for the file format.
+        
+        Returns:
+            ImageProcessor subclass instance
+        """
+        return self._image_processor
     
     @property
     def config(self) -> Dict[str, Any]:
@@ -182,6 +203,21 @@ class BaseHandler(ABC):
             # If subclass returns None, use NullMetadataExtractor
             self._metadata_extractor = extractor if extractor is not None else NullMetadataExtractor()
         return self._metadata_extractor
+    
+    @property
+    def format_image_processor(self) -> ImageProcessor:
+        """
+        Format-specific image processor (lazy-initialized).
+        
+        Returns the image processor for this handler's file format.
+        Each handler should override _create_format_image_processor() to provide
+        format-specific image handling capabilities.
+        """
+        if self._format_image_processor is None:
+            processor = self._create_format_image_processor()
+            # If subclass returns None, use default image_processor
+            self._format_image_processor = processor if processor is not None else self._image_processor
+        return self._format_image_processor
     
     @property
     def logger(self) -> logging.Logger:

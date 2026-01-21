@@ -24,10 +24,6 @@ from contextifier.core.processor.hwp_helper import (
     HWPTAG_TABLE,
     HwpRecord,
     decompress_section,
-    find_bindata_stream,
-    extract_bindata_index,
-    extract_and_upload_image,
-    process_images_from_bindata,
     parse_doc_info,
     parse_table,
     extract_text_from_stream_raw,
@@ -37,6 +33,7 @@ from contextifier.core.processor.hwp_helper import (
 )
 from contextifier.core.processor.hwp_helper.hwp_chart_extractor import HWPChartExtractor
 from contextifier.core.processor.hwp_helper.hwp_metadata import HWPMetadataExtractor
+from contextifier.core.processor.hwp_helper.hwp_image_processor import HWPImageProcessor
 
 if TYPE_CHECKING:
     from contextifier.core.document_processor import CurrentFile
@@ -55,6 +52,15 @@ class HWPHandler(BaseHandler):
     def _create_metadata_extractor(self):
         """Create HWP-specific metadata extractor."""
         return HWPMetadataExtractor()
+    
+    def _create_format_image_processor(self):
+        """Create HWP-specific image processor."""
+        return HWPImageProcessor(
+            directory_path=self._image_processor.config.directory_path,
+            tag_prefix=self._image_processor.config.tag_prefix,
+            tag_suffix=self._image_processor.config.tag_suffix,
+            storage_backend=self._image_processor.storage_backend,
+        )
     
     def extract_text(
         self,
@@ -103,7 +109,12 @@ class HWPHandler(BaseHandler):
                 section_texts = self._extract_body_text(ole, bin_data_map, processed_images)
                 text_content.extend(section_texts)
                 
-                image_text = process_images_from_bindata(ole, processed_images=processed_images, image_processor=self.image_processor)
+                # Use format_image_processor directly
+                image_processor = self.format_image_processor
+                if hasattr(image_processor, 'process_images_from_bindata'):
+                    image_text = image_processor.process_images_from_bindata(ole, processed_images=processed_images)
+                else:
+                    image_text = ""
                 if image_text:
                     text_content.append("\n\n=== Extracted Images (Not Inline) ===\n")
                     text_content.append(image_text)
@@ -155,7 +166,7 @@ class HWPHandler(BaseHandler):
         if file_data[:4] == b'PK\x03\x04':
             self.logger.info(f"File {file_path} is a Zip file. Processing as HWPX.")
             from contextifier.core.processor.hwps_handler import HWPXHandler
-            hwpx_handler = HWPXHandler(config=self.config, image_processor=self.image_processor)
+            hwpx_handler = HWPXHandler(config=self.config, image_processor=self.format_image_processor)
             return hwpx_handler.extract_text(current_file, extract_metadata=extract_metadata)
         
         # Check HWP 3.0 format
@@ -313,21 +324,24 @@ class HWPHandler(BaseHandler):
         if not bin_data_list:
             return None
         
-        bindata_index = extract_bindata_index(record.payload, len(bin_data_list))
+        image_processor = self.format_image_processor
+        
+        # Use image processor methods directly
+        bindata_index = image_processor.extract_bindata_index(record.payload, len(bin_data_list))
         
         if bindata_index and 0 < bindata_index <= len(bin_data_list):
             storage_id, ext = bin_data_list[bindata_index - 1]
             if storage_id > 0:
-                target_stream = find_bindata_stream(ole, storage_id, ext)
+                target_stream = image_processor.find_bindata_stream(ole, storage_id, ext)
                 if target_stream:
-                    return extract_and_upload_image(ole, target_stream, processed_images, image_processor=self.image_processor)
+                    return image_processor.extract_and_save_image(ole, target_stream, processed_images)
         
         if len(bin_data_list) == 1:
             storage_id, ext = bin_data_list[0]
             if storage_id > 0:
-                target_stream = find_bindata_stream(ole, storage_id, ext)
+                target_stream = image_processor.find_bindata_stream(ole, storage_id, ext)
                 if target_stream:
-                    return extract_and_upload_image(ole, target_stream, processed_images, image_processor=self.image_processor)
+                    return image_processor.extract_and_save_image(ole, target_stream, processed_images)
         
         return None
     
@@ -360,7 +374,7 @@ class HWPHandler(BaseHandler):
                 if plain_text and len(plain_text) > 100:
                     text_content.append(plain_text)
             
-            image_text = recover_images_from_raw(raw_data, image_processor=self.image_processor)
+            image_text = recover_images_from_raw(raw_data, image_processor=self.format_image_processor)
             if image_text:
                 text_content.append(f"\n\n=== Recovered Images ===\n{image_text}")
         

@@ -14,11 +14,10 @@ from contextifier.core.functions.chart_extractor import BaseChartExtractor
 from contextifier.core.processor.hwpx_helper import (
     parse_bin_item_map,
     parse_hwpx_section,
-    process_hwpx_images,
-    get_remaining_images,
 )
 from contextifier.core.processor.hwpx_helper.hwpx_chart_extractor import HWPXChartExtractor
 from contextifier.core.processor.hwpx_helper.hwpx_metadata import HWPXMetadataExtractor
+from contextifier.core.processor.hwpx_helper.hwpx_image_processor import HWPXImageProcessor
 
 if TYPE_CHECKING:
     from contextifier.core.document_processor import CurrentFile
@@ -37,6 +36,15 @@ class HWPXHandler(BaseHandler):
     def _create_metadata_extractor(self):
         """Create HWPX-specific metadata extractor."""
         return HWPXMetadataExtractor()
+    
+    def _create_format_image_processor(self):
+        """Create HWPX-specific image processor."""
+        return HWPXImageProcessor(
+            directory_path=self._image_processor.config.directory_path,
+            tag_prefix=self._image_processor.config.tag_prefix,
+            tag_suffix=self._image_processor.config.tag_suffix,
+            storage_backend=self._image_processor.storage_backend,
+        )
     
     def extract_text(
         self,
@@ -104,15 +112,18 @@ class HWPXHandler(BaseHandler):
                 for sec_file in section_files:
                     with zf.open(sec_file) as f:
                         xml_content = f.read()
-                        section_text = parse_hwpx_section(xml_content, zf, bin_item_map, processed_images, image_processor=self.image_processor)
+                        section_text = parse_hwpx_section(xml_content, zf, bin_item_map, processed_images, image_processor=self.format_image_processor)
                         text_content.append(section_text)
                 
-                remaining_images = get_remaining_images(zf, processed_images)
-                if remaining_images:
-                    image_text = process_hwpx_images(zf, remaining_images, image_processor=self.image_processor)
-                    if image_text:
-                        text_content.append("\n\n=== Extracted Images (Not Inline) ===\n")
-                        text_content.append(image_text)
+                # Use format_image_processor directly
+                image_processor = self.format_image_processor
+                if hasattr(image_processor, 'get_remaining_images'):
+                    remaining_images = image_processor.get_remaining_images(zf, processed_images)
+                    if remaining_images and hasattr(image_processor, 'process_images'):
+                        image_text = image_processor.process_images(zf, remaining_images)
+                        if image_text:
+                            text_content.append("\n\n=== Extracted Images (Not Inline) ===\n")
+                            text_content.append(image_text)
                 
                 # Add pre-extracted charts
                 while chart_idx[0] < len(chart_data_list):
