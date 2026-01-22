@@ -57,14 +57,13 @@ if TYPE_CHECKING:
 
 # Import from new modular helpers
 from contextifier.core.processor.pdf_helpers.pdf_metadata import (
-    extract_pdf_metadata,
-    format_metadata,
+    PDFMetadataExtractor,
+)
+from contextifier.core.processor.pdf_helpers.pdf_image_processor import (
+    PDFImageProcessor,
 )
 from contextifier.core.processor.pdf_helpers.pdf_utils import (
     bbox_overlaps,
-)
-from contextifier.core.processor.pdf_helpers.pdf_image import (
-    extract_images_from_page,
 )
 from contextifier.core.processor.pdf_helpers.pdf_text_extractor import (
     extract_text_blocks,
@@ -124,20 +123,43 @@ TableDetectionStrategy = TableDetectionStrategyType
 class PDFHandler(BaseHandler):
     """
     PDF Document Handler
-    
+
     Inherits from BaseHandler to manage config and image_processor at instance level.
     All internal methods access these via self.config, self.image_processor.
-    
+
     Usage:
         handler = PDFHandler(config=config, image_processor=image_processor)
         text = handler.extract_text(current_file)
     """
-    
+
+    def _create_file_converter(self):
+        """Create PDF-specific file converter."""
+        from contextifier.core.processor.pdf_helpers.pdf_file_converter import PDFFileConverter
+        return PDFFileConverter()
+
+    def _create_preprocessor(self):
+        """Create PDF-specific preprocessor."""
+        from contextifier.core.processor.pdf_helpers.pdf_preprocessor import PDFPreprocessor
+        return PDFPreprocessor()
+
     def _create_chart_extractor(self):
         """PDF chart extraction not yet implemented. Return NullChartExtractor."""
         from contextifier.core.functions.chart_extractor import NullChartExtractor
         return NullChartExtractor(self._chart_processor)
-    
+
+    def _create_metadata_extractor(self):
+        """Create PDF-specific metadata extractor."""
+        return PDFMetadataExtractor()
+
+    def _create_format_image_processor(self):
+        """Create PDF-specific image processor."""
+        return PDFImageProcessor(
+            directory_path=self._image_processor.config.directory_path,
+            tag_prefix=self._image_processor.config.tag_prefix,
+            tag_suffix=self._image_processor.config.tag_suffix,
+            storage_backend=self._image_processor.storage_backend,
+        )
+
     def extract_text(
         self,
         current_file: "CurrentFile",
@@ -146,19 +168,19 @@ class PDFHandler(BaseHandler):
     ) -> str:
         """
         Extract text from PDF file.
-        
+
         Args:
             current_file: CurrentFile dict containing file info and binary data
             extract_metadata: Whether to extract metadata
             **kwargs: Additional options
-            
+
         Returns:
             Extracted text
         """
         file_path = current_file.get("file_path", "unknown")
         self.logger.info(f"[PDF] Processing: {file_path}")
         return self._extract_pdf(current_file, extract_metadata)
-    
+
     def _extract_pdf(
         self,
         current_file: "CurrentFile",
@@ -166,27 +188,31 @@ class PDFHandler(BaseHandler):
     ) -> str:
         """
         Enhanced PDF processing - adaptive complexity-based.
-        
+
         Args:
             current_file: CurrentFile dict containing file info and binary data
             extract_metadata: Whether to extract metadata
-            
+
         Returns:
             Extracted text
         """
         file_path = current_file.get("file_path", "unknown")
-        
+        file_data = current_file.get("file_data", b"")
+
         try:
-            # Open PDF from stream to avoid path encoding issues
-            file_stream = self.get_file_stream(current_file)
-            doc = fitz.open(stream=file_stream, filetype="pdf")
+            # Step 1: Use FileConverter to convert binary to fitz.Document
+            doc = self.file_converter.convert(file_data)
+
+            # Step 2: Preprocess - may transform doc in the future
+            preprocessed = self.preprocess(doc)
+            doc = preprocessed.clean_content  # TRUE SOURCE
+
             all_pages_text = []
             processed_images: Set[int] = set()
 
             # Extract metadata
             if extract_metadata:
-                metadata = extract_pdf_metadata(doc)
-                metadata_text = format_metadata(metadata)
+                metadata_text = self.extract_and_format_metadata(doc)
                 if metadata_text:
                     all_pages_text.append(metadata_text)
 
@@ -326,7 +352,7 @@ class PDFHandler(BaseHandler):
                 page_elements.append(elem)
 
         if complex_bboxes:
-            block_engine = BlockImageEngine(page, page_num, image_processor=self.image_processor)
+            block_engine = BlockImageEngine(page, page_num, image_processor=self.format_image_processor)
 
             for complex_bbox in complex_bboxes:
                 result = block_engine.process_region(complex_bbox, region_type="complex_region")
@@ -361,7 +387,7 @@ class PDFHandler(BaseHandler):
         table_bboxes = [elem.bbox for elem in page_tables]
 
         if complex_regions:
-            block_engine = BlockImageEngine(page, page_num, image_processor=self.image_processor)
+            block_engine = BlockImageEngine(page, page_num, image_processor=self.format_image_processor)
 
             for complex_bbox in complex_regions:
                 if any(bbox_overlaps(complex_bbox, tb) for tb in table_bboxes):
@@ -443,7 +469,7 @@ class PDFHandler(BaseHandler):
             return merge_page_elements(page_elements)
 
         # Smart block processing
-        block_engine = BlockImageEngine(page, page_num, image_processor=self.image_processor)
+        block_engine = BlockImageEngine(page, page_num, image_processor=self.format_image_processor)
         multi_result: MultiBlockResult = block_engine.process_page_smart()
 
         if multi_result.success and multi_result.block_results:
@@ -501,12 +527,25 @@ class PDFHandler(BaseHandler):
         min_image_size: int = 50,
         min_image_area: int = 2500
     ) -> List[PageElement]:
-        """Extract images from page using instance's image_processor."""
-        return extract_images_from_page(
-            page, page_num, doc, processed_images, table_bboxes,
-            image_processor=self.image_processor,
-            min_image_size=min_image_size, min_image_area=min_image_area
-        )
+        """Extract images from page using instance's format_image_processor."""
+        # Use PDFImageProcessor's integrated method
+        image_processor = self.format_image_processor
+        if hasattr(image_processor, 'extract_images_from_page'):
+            elements_dicts = image_processor.extract_images_from_page(
+                page, page_num, doc, processed_images, table_bboxes,
+                min_image_size=min_image_size, min_image_area=min_image_area
+            )
+            # Convert dicts to PageElement
+            return [
+                PageElement(
+                    element_type=ElementType.IMAGE,
+                    content=e['content'],
+                    bbox=e['bbox'],
+                    page_num=e['page_num']
+                )
+                for e in elements_dicts
+            ]
+        return []
 
 
 # ============================================================================
@@ -520,7 +559,7 @@ def extract_text_from_pdf(
 ) -> str:
     """
     PDF text extraction (legacy function interface).
-    
+
     This function creates a PDFHandler instance and delegates to it.
     For new code, consider using PDFHandler class directly.
 
@@ -534,13 +573,13 @@ def extract_text_from_pdf(
     """
     if current_config is None:
         current_config = {}
-    
+
     # Extract image_processor from config if available
     image_processor = current_config.get("image_processor")
-    
+
     # Create handler instance with config and image_processor
     handler = PDFHandler(config=current_config, image_processor=image_processor)
-    
+
     return handler.extract_text(file_path, extract_metadata=extract_default_metadata)
 
 
@@ -555,4 +594,3 @@ def _extract_pdf(
 ) -> str:
     """Deprecated: Use PDFHandler.extract_text() instead."""
     return extract_text_from_pdf(file_path, current_config, extract_default_metadata)
-

@@ -263,8 +263,8 @@ class DocumentProcessor:
     """
 
     # === Supported File Type Classifications ===
-    DOCUMENT_TYPES = frozenset(['pdf', 'docx', 'doc', 'pptx', 'ppt', 'hwp', 'hwpx'])
-    TEXT_TYPES = frozenset(['txt', 'md', 'markdown', 'rtf'])
+    DOCUMENT_TYPES = frozenset(['pdf', 'docx', 'doc', 'rtf', 'pptx', 'ppt', 'hwp', 'hwpx'])
+    TEXT_TYPES = frozenset(['txt', 'md', 'markdown'])
     CODE_TYPES = frozenset([
         'py', 'js', 'ts', 'java', 'cpp', 'c', 'h', 'cs', 'go', 'rs',
         'php', 'rb', 'swift', 'kt', 'scala', 'dart', 'r', 'sql',
@@ -291,6 +291,8 @@ class DocumentProcessor:
         slide_tag_suffix: Optional[str] = None,
         chart_tag_prefix: Optional[str] = None,
         chart_tag_suffix: Optional[str] = None,
+        metadata_tag_prefix: Optional[str] = None,
+        metadata_tag_suffix: Optional[str] = None,
         **kwargs
     ):
         """
@@ -328,6 +330,12 @@ class DocumentProcessor:
             chart_tag_suffix: Suffix for chart tags in extracted text
                    - Default: "[/chart]"
                    - Example: "</chart>" for XML format
+            metadata_tag_prefix: Opening tag for metadata section
+                   - Default: "<Document-Metadata>"
+                   - Example: "<metadata>" for custom format
+            metadata_tag_suffix: Closing tag for metadata section
+                   - Default: "</Document-Metadata>"
+                   - Example: "</metadata>" for custom format
             **kwargs: Additional configuration options
 
         Example:
@@ -342,7 +350,9 @@ class DocumentProcessor:
             ...     page_tag_prefix="<page>",
             ...     page_tag_suffix="</page>",
             ...     chart_tag_prefix="<chart>",
-            ...     chart_tag_suffix="</chart>"
+            ...     chart_tag_suffix="</chart>",
+            ...     metadata_tag_prefix="<meta>",
+            ...     metadata_tag_suffix="</meta>"
             ... )
 
             >>> # Markdown format
@@ -359,6 +369,10 @@ class DocumentProcessor:
         self._ocr_engine = ocr_engine
         self._kwargs = kwargs
         self._supported_extensions: Optional[List[str]] = None
+        
+        # Store metadata tag settings
+        self._metadata_tag_prefix = metadata_tag_prefix
+        self._metadata_tag_suffix = metadata_tag_suffix
 
         # Logger setup
         self._logger = logging.getLogger("contextify.processor")
@@ -389,12 +403,19 @@ class DocumentProcessor:
             chart_tag_prefix=chart_tag_prefix,
             chart_tag_suffix=chart_tag_suffix
         )
+        
+        # Create instance-specific MetadataFormatter
+        self._metadata_formatter = self._create_metadata_formatter(
+            metadata_tag_prefix=metadata_tag_prefix,
+            metadata_tag_suffix=metadata_tag_suffix
+        )
 
         # Add processors to config for handlers to access
         if isinstance(self._config, dict):
             self._config["image_processor"] = self._image_processor
             self._config["page_tag_processor"] = self._page_tag_processor
             self._config["chart_processor"] = self._chart_processor
+            self._config["metadata_formatter"] = self._metadata_formatter
 
     # =========================================================================
     # Public Properties
@@ -483,6 +504,26 @@ class DocumentProcessor:
     def chart_processor(self) -> Any:
         """Current ChartProcessor instance for this DocumentProcessor."""
         return self._chart_processor
+
+    @property
+    def metadata_tag_config(self) -> Dict[str, Any]:
+        """
+        Current metadata formatter configuration.
+
+        Returns:
+            Dictionary containing:
+            - metadata_tag_prefix: Opening tag for metadata section
+            - metadata_tag_suffix: Closing tag for metadata section
+        """
+        return {
+            "metadata_tag_prefix": self._metadata_formatter.metadata_tag_prefix,
+            "metadata_tag_suffix": self._metadata_formatter.metadata_tag_suffix,
+        }
+
+    @property
+    def metadata_formatter(self) -> Any:
+        """Current MetadataFormatter instance for this DocumentProcessor."""
+        return self._metadata_formatter
 
     @property
     def ocr_engine(self) -> Optional[Any]:
@@ -875,6 +916,34 @@ class DocumentProcessor:
             tag_suffix=chart_tag_suffix
         )
 
+    def _create_metadata_formatter(
+        self,
+        metadata_tag_prefix: Optional[str] = None,
+        metadata_tag_suffix: Optional[str] = None
+    ) -> Any:
+        """
+        Create a MetadataFormatter instance for this DocumentProcessor.
+
+        This creates an instance-specific MetadataFormatter that will be
+        passed to handlers via config.
+
+        Args:
+            metadata_tag_prefix: Opening tag (default: "<Document-Metadata>")
+            metadata_tag_suffix: Closing tag (default: "</Document-Metadata>")
+
+        Returns:
+            MetadataFormatter instance
+        """
+        from contextifier.core.functions.metadata_extractor import MetadataFormatter
+
+        kwargs = {}
+        if metadata_tag_prefix is not None:
+            kwargs["metadata_tag_prefix"] = metadata_tag_prefix
+        if metadata_tag_suffix is not None:
+            kwargs["metadata_tag_suffix"] = metadata_tag_suffix
+
+        return MetadataFormatter(**kwargs)
+
     def _build_supported_extensions(self) -> List[str]:
         """Build list of supported extensions."""
         extensions = list(
@@ -940,6 +1009,19 @@ class DocumentProcessor:
         except ImportError as e:
             self._logger.warning(f"DOC handler not available: {e}")
 
+        # RTF handler
+        try:
+            from contextifier.core.processor.rtf_handler import RTFHandler
+            rtf_handler = RTFHandler(
+                config=self._config,
+                image_processor=self._image_processor,
+                page_tag_processor=self._page_tag_processor,
+                chart_processor=self._chart_processor
+            )
+            self._handler_registry['rtf'] = rtf_handler.extract_text
+        except ImportError as e:
+            self._logger.warning(f"RTF handler not available: {e}")
+
         # PPT/PPTX handler
         try:
             from contextifier.core.processor.ppt_handler import PPTHandler
@@ -997,7 +1079,7 @@ class DocumentProcessor:
 
         # HWPX handler
         try:
-            from contextifier.core.processor.hwps_handler import HWPXHandler
+            from contextifier.core.processor.hwpx_handler import HWPXHandler
             hwpx_handler = HWPXHandler(
                 config=self._config,
                 image_processor=self._image_processor,

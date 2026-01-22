@@ -45,22 +45,12 @@ from contextifier.core.processor.hwp_helper.hwp_decoder import (
 
 # Metadata
 from contextifier.core.processor.hwp_helper.hwp_metadata import (
-    extract_metadata,
+    HWPMetadataExtractor,
     parse_hwp_summary_information,
-    format_metadata,
-    MetadataHelper,
 )
 
-# Image
-from contextifier.core.processor.hwp_helper.hwp_image import (
-    try_decompress_image,
-    save_image_to_local,
-    find_bindata_stream,
-    extract_bindata_index,
-    extract_and_upload_image,
-    process_images_from_bindata,
-    ImageHelper,
-)
+# Image Processor (replaces hwp_image.py utility functions)
+from contextifier.core.processor.hwp_helper.hwp_image_processor import HWPImageProcessor
 
 # Chart Extractor
 from contextifier.core.processor.hwp_helper.hwp_chart_extractor import HWPChartExtractor
@@ -109,18 +99,10 @@ __all__ = [
     'decompress_stream',
     'decompress_section',
     # Metadata
-    'extract_metadata',
+    'HWPMetadataExtractor',
     'parse_hwp_summary_information',
-    'format_metadata',
-    'MetadataHelper',
-    # Image
-    'try_decompress_image',
-    'save_image_to_local',
-    'find_bindata_stream',
-    'extract_bindata_index',
-    'extract_and_upload_image',
-    'process_images_from_bindata',
-    'ImageHelper',
+    # Image Processor
+    'HWPImageProcessor',
     # Chart Extractor
     'HWPChartExtractor',
     # DocInfo

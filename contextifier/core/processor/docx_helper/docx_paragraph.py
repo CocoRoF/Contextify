@@ -1,20 +1,22 @@
-# service/document_processor/processor/docx_helper/docx_paragraph.py
+# contextifier/core/processor/docx_helper/docx_paragraph.py
 """
 DOCX Paragraph Processing Utility
 
 Processes Paragraph elements in DOCX documents.
 - process_paragraph_element: Process Paragraph element
 - has_page_break_element: Check for page break
+
+Image and drawing extraction is handled by DOCXImageProcessor.
 """
 import logging
-from typing import Optional, Set, Tuple, Callable
+from typing import Optional, Set, Tuple, Callable, TYPE_CHECKING
 
 from docx import Document
 
 from contextifier.core.processor.docx_helper.docx_constants import ElementType, NAMESPACES
-from contextifier.core.processor.docx_helper.docx_drawing import process_drawing_element
-from contextifier.core.processor.docx_helper.docx_image import process_pict_element
-from contextifier.core.functions.img_processor import ImageProcessor
+
+if TYPE_CHECKING:
+    from contextifier.core.processor.docx_helper.docx_image_processor import DOCXImageProcessor
 
 logger = logging.getLogger("document-processor")
 
@@ -24,7 +26,7 @@ def process_paragraph_element(
     doc: Document,
     processed_images: Set[str],
     file_path: str = None,
-    image_processor: Optional[ImageProcessor] = None,
+    image_processor: Optional["DOCXImageProcessor"] = None,
     chart_callback: Optional[Callable[[], str]] = None
 ) -> Tuple[str, bool, int, int]:
     """
@@ -37,7 +39,7 @@ def process_paragraph_element(
         doc: python-docx Document object
         processed_images: Set of processed image paths (deduplication)
         file_path: Original file path
-        image_processor: ImageProcessor instance
+        image_processor: DOCXImageProcessor instance
         chart_callback: Callback function to get next chart content
 
     Returns:
@@ -59,13 +61,14 @@ def process_paragraph_element(
                 if t_elem.text:
                     content_parts.append(t_elem.text)
 
-            # Process Drawing (image/chart/diagram)
+            # Process Drawing (image/chart/diagram) via DOCXImageProcessor
             for drawing_elem in run_elem.findall('w:drawing', NAMESPACES):
-                drawing_content, drawing_type = process_drawing_element(
-                    drawing_elem, doc, processed_images, file_path, 
-                    image_processor, 
-                    chart_callback=chart_callback
-                )
+                if image_processor and hasattr(image_processor, 'process_drawing_element'):
+                    drawing_content, drawing_type = image_processor.process_drawing_element(
+                        drawing_elem, doc, processed_images, chart_callback=chart_callback
+                    )
+                else:
+                    drawing_content, drawing_type = "", None
                 if drawing_content:
                     content_parts.append(drawing_content)
                     if drawing_type == ElementType.IMAGE:
@@ -73,9 +76,12 @@ def process_paragraph_element(
                     elif drawing_type == ElementType.CHART:
                         chart_count += 1
 
-            # Process pict element (legacy VML image)
+            # Process pict element (legacy VML image) - use DOCXImageProcessor
             for pict_elem in run_elem.findall('w:pict', NAMESPACES):
-                pict_content = process_pict_element(pict_elem, doc, processed_images, image_processor)
+                if image_processor and hasattr(image_processor, 'extract_from_pict'):
+                    pict_content = image_processor.extract_from_pict(pict_elem, doc, processed_images)
+                else:
+                    pict_content = "[Unknown Image]"
                 if pict_content:
                     content_parts.append(pict_content)
                     image_count += 1

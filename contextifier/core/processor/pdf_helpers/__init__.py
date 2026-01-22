@@ -4,10 +4,9 @@ PDF Helpers Package
 Contains helper modules for PDF processing.
 """
 
-# Backward compatibility - import from new modules
+# Metadata - class-based extractor
 from contextifier.core.processor.pdf_helpers.pdf_metadata import (
-    extract_pdf_metadata,
-    format_metadata,
+    PDFMetadataExtractor,
     parse_pdf_date,
 )
 
@@ -20,8 +19,9 @@ from contextifier.core.processor.pdf_helpers.pdf_utils import (
     bbox_overlaps,
 )
 
-from contextifier.core.processor.pdf_helpers.pdf_image import (
-    extract_images_from_page,
+# Image Processor (replaces pdf_image.py utility functions)
+from contextifier.core.processor.pdf_helpers.pdf_image_processor import (
+    PDFImageProcessor,
 )
 
 from contextifier.core.processor.pdf_helpers.pdf_text_extractor import (
@@ -201,8 +201,8 @@ __all__ = [
     'find_image_position',
     'get_text_lines_with_positions',
     'bbox_overlaps',
-    # pdf_image
-    'extract_images_from_page',
+    # Image Processor
+    'PDFImageProcessor',
     # pdf_text_extractor
     'extract_text_blocks',
     'split_ocr_text_to_blocks',

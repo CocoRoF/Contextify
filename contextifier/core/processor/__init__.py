@@ -7,7 +7,8 @@ Provides handlers for processing individual document formats.
 Handler List:
 - pdf_handler: PDF document processing (adaptive complexity-based)
 - docx_handler: DOCX document processing
-- doc_handler: DOC document processing (including RTF)
+- doc_handler: DOC document processing (OLE, HTML, misnamed DOCX)
+- rtf_handler: RTF document processing
 - ppt_handler: PPT/PPTX document processing
 - excel_handler: Excel (XLSX/XLS) document processing
 - hwp_processor: HWP document processing
@@ -19,7 +20,8 @@ Handler List:
 Helper Modules (subdirectories):
 - csv_helper/: CSV processing helper
 - docx_helper/: DOCX processing helper
-- doc_helpers/: DOC/RTF processing helper
+- doc_helpers/: DOC processing helper
+- rtf_helper/: RTF processing helper
 - excel_helper/: Excel processing helper
 - hwp_helper/: HWP processing helper
 - hwpx_helper/: HWPX processing helper
@@ -29,6 +31,7 @@ Helper Modules (subdirectories):
 Usage Example:
     from contextifier.core.processor import PDFHandler
     from contextifier.core.processor import DOCXHandler
+    from contextifier.core.processor import RTFHandler
     from contextifier.core.processor.pdf_helpers import extract_pdf_metadata
 """
 
@@ -38,6 +41,7 @@ from contextifier.core.processor.pdf_handler import PDFHandler
 # === Document Handlers ===
 from contextifier.core.processor.docx_handler import DOCXHandler
 from contextifier.core.processor.doc_handler import DOCHandler
+from contextifier.core.processor.rtf_handler import RTFHandler
 from contextifier.core.processor.ppt_handler import PPTHandler
 
 # === Data Handlers ===
@@ -47,19 +51,21 @@ from contextifier.core.processor.text_handler import TextHandler
 
 # === HWP Handlers ===
 from contextifier.core.processor.hwp_handler import HWPHandler
-from contextifier.core.processor.hwps_handler import HWPXHandler
+from contextifier.core.processor.hwpx_handler import HWPXHandler
 
 # === Other Processors ===
 # from contextifier.core.processor.html_reprocessor import ...  # HTML reprocessing
 
 # === Helper Modules (subpackages) ===
 from contextifier.core.processor import csv_helper
+from contextifier.core.processor import doc_helpers
 from contextifier.core.processor import docx_helper
 from contextifier.core.processor import excel_helper
 from contextifier.core.processor import hwp_helper
 from contextifier.core.processor import hwpx_helper
 from contextifier.core.processor import pdf_helpers
 from contextifier.core.processor import ppt_helper
+from contextifier.core.processor import rtf_helper
 
 __all__ = [
     # PDF Handler
@@ -67,6 +73,7 @@ __all__ = [
     # Document Handlers
     "DOCXHandler",
     "DOCHandler",
+    "RTFHandler",
     "PPTHandler",
     # Data Handlers
     "ExcelHandler",
@@ -77,10 +84,12 @@ __all__ = [
     "HWPXHandler",
     # Helper subpackages
     "csv_helper",
+    "doc_helpers",
     "docx_helper",
     "excel_helper",
     "hwp_helper",
     "hwpx_helper",
     "pdf_helpers",
     "ppt_helper",
+    "rtf_helper",
 ]
