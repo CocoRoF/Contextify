@@ -12,6 +12,8 @@ import traceback
 import zipfile
 from typing import List, Dict, Any, Optional, Set, TYPE_CHECKING
 
+import olefile
+
 from contextifier.core.processor.base_handler import BaseHandler
 from contextifier.core.functions.chart_extractor import BaseChartExtractor
 from contextifier.core.processor.hwp_helper import (
@@ -42,20 +44,25 @@ logger = logging.getLogger("document-processor")
 
 class HWPHandler(BaseHandler):
     """HWP 5.0 OLE Format File Processing Handler Class"""
-    
+
     def _create_file_converter(self):
         """Create HWP-specific file converter."""
         from contextifier.core.processor.hwp_helper.hwp_file_converter import HWPFileConverter
         return HWPFileConverter()
-    
+
+    def _create_preprocessor(self):
+        """Create HWP-specific preprocessor."""
+        from contextifier.core.processor.hwp_helper.hwp_preprocessor import HWPPreprocessor
+        return HWPPreprocessor()
+
     def _create_chart_extractor(self) -> BaseChartExtractor:
         """Create HWP-specific chart extractor."""
         return HWPChartExtractor(self._chart_processor)
-    
+
     def _create_metadata_extractor(self):
         """Create HWP-specific metadata extractor."""
         return HWPMetadataExtractor()
-    
+
     def _create_format_image_processor(self):
         """Create HWP-specific image processor."""
         return HWPImageProcessor(
@@ -64,7 +71,7 @@ class HWPHandler(BaseHandler):
             tag_suffix=self._image_processor.config.tag_suffix,
             storage_backend=self._image_processor.storage_backend,
         )
-    
+
     def extract_text(
         self,
         current_file: "CurrentFile",
@@ -73,46 +80,50 @@ class HWPHandler(BaseHandler):
     ) -> str:
         """
         Extract text from HWP file.
-        
+
         Args:
             current_file: CurrentFile dict containing file info and binary data
             extract_metadata: Whether to extract metadata
             **kwargs: Additional options
-            
+
         Returns:
             Extracted text
         """
         file_path = current_file.get("file_path", "unknown")
         file_data = current_file.get("file_data", b"")
-        
+
         # Check if it's an OLE file using file_converter.validate()
         if not self.file_converter.validate(file_data):
             return self._handle_non_ole_file(current_file, extract_metadata)
-        
+
         text_content = []
         processed_images: Set[str] = set()
-        
+
         try:
-            # Open OLE file using file_converter
+            # Step 1: Open OLE file using file_converter
             file_stream = self.get_file_stream(current_file)
-            
+
             # Pre-extract all charts using ChartExtractor
             chart_data_list = self.chart_extractor.extract_all_from_file(file_stream)
-            
+
             # Convert binary to OLE object using file_converter
             ole = self.file_converter.convert(file_data, file_stream)
-            
+
+            # Step 2: Preprocess - may transform ole in the future
+            preprocessed = self.preprocess(ole)
+            ole = preprocessed.clean_content  # TRUE SOURCE
+
             try:
                 if extract_metadata:
                     metadata_text = self._extract_metadata(ole)
                     if metadata_text:
                         text_content.append(metadata_text)
                         text_content.append("")
-                
+
                 bin_data_map = self._parse_docinfo(ole)
                 section_texts = self._extract_body_text(ole, bin_data_map, processed_images)
                 text_content.extend(section_texts)
-                
+
                 # Use format_image_processor directly
                 image_processor = self.format_image_processor
                 if hasattr(image_processor, 'process_images_from_bindata'):
@@ -122,7 +133,7 @@ class HWPHandler(BaseHandler):
                 if image_text:
                     text_content.append("\n\n=== Extracted Images (Not Inline) ===\n")
                     text_content.append(image_text)
-                
+
                 # Add pre-extracted charts
                 for chart_data in chart_data_list:
                     chart_text = self._format_chart_data(chart_data)
@@ -131,20 +142,20 @@ class HWPHandler(BaseHandler):
             finally:
                 # Close OLE object using file_converter
                 self.file_converter.close(ole)
-        
+
         except Exception as e:
             self.logger.error(f"Error processing HWP file: {e}")
             return f"Error processing HWP file: {str(e)}"
-        
+
         return "\n".join(text_content)
-    
+
     def _format_chart_data(self, chart_data: "ChartData") -> str:
         """Format ChartData using ChartProcessor."""
         from contextifier.core.functions.chart_extractor import ChartData
-        
+
         if not isinstance(chart_data, ChartData):
             return ""
-        
+
         if chart_data.has_data():
             return self.chart_processor.format_chart_data(
                 chart_type=chart_data.chart_type,
@@ -157,61 +168,61 @@ class HWPHandler(BaseHandler):
                 chart_type=chart_data.chart_type,
                 title=chart_data.title
             )
-    
+
     def _handle_non_ole_file(self, current_file: "CurrentFile", extract_metadata: bool) -> str:
         """Handle non-OLE file."""
         file_path = current_file.get("file_path", "unknown")
         file_data = current_file.get("file_data", b"")
-        
+
         # Check if it's a ZIP file (HWPX)
         if file_data[:4] == b'PK\x03\x04':
             self.logger.info(f"File {file_path} is a Zip file. Processing as HWPX.")
             from contextifier.core.processor.hwpx_handler import HWPXHandler
             hwpx_handler = HWPXHandler(config=self.config, image_processor=self.format_image_processor)
             return hwpx_handler.extract_text(current_file, extract_metadata=extract_metadata)
-        
+
         # Check HWP 3.0 format
         if b'HWP Document File' in file_data[:32]:
             return "[HWP 3.0 Format - Not Supported]"
-        
+
         return self._process_corrupted_hwp(current_file)
-    
+
     def _extract_metadata(self, ole: olefile.OleFileIO) -> str:
         """Extract metadata from OLE file."""
         return self.extract_and_format_metadata(ole)
-    
+
     def _parse_docinfo(self, ole: olefile.OleFileIO) -> Dict:
         """Parse DocInfo stream."""
         bin_data_by_storage_id, bin_data_list = parse_doc_info(ole)
         return {'by_storage_id': bin_data_by_storage_id, 'by_index': bin_data_list}
-    
+
     def _extract_body_text(self, ole: olefile.OleFileIO, bin_data_map: Dict, processed_images: Set[str]) -> List[str]:
         """Extract text from BodyText sections."""
         text_content = []
-        
+
         body_text_sections = [
             entry for entry in ole.listdir()
             if entry[0] == "BodyText" and entry[1].startswith("Section")
         ]
         body_text_sections.sort(key=lambda x: int(x[1].replace("Section", "")))
-        
+
         for section in body_text_sections:
             stream = ole.openstream(section)
             data = stream.read()
-            
+
             decompressed_data, success = decompress_section(data)
             if not success:
                 continue
-            
+
             section_text = self._parse_section(decompressed_data, ole, bin_data_map, processed_images)
-            
+
             if not section_text or not section_text.strip():
                 section_text = extract_text_from_stream_raw(decompressed_data)
-            
+
             text_content.append(section_text)
-        
+
         return text_content
-    
+
     def _parse_section(self, data: bytes, ole=None, bin_data_map=None, processed_images=None) -> str:
         """Parse a section."""
         try:
@@ -220,49 +231,49 @@ class HWPHandler(BaseHandler):
         except Exception as e:
             self.logger.error(f"Error parsing HWP section: {e}")
             return ""
-    
+
     def _traverse_tree(self, record: 'HwpRecord', ole=None, bin_data_map=None, processed_images=None) -> str:
         """Traverse record tree."""
         parts = []
-        
+
         if record.tag_id == HWPTAG_PARA_HEADER:
             return self._process_paragraph(record, ole, bin_data_map, processed_images)
-        
+
         if record.tag_id == HWPTAG_CTRL_HEADER:
             result = self._process_control(record, ole, bin_data_map, processed_images)
             if result:
                 return result
-        
+
         if record.tag_id == HWPTAG_SHAPE_COMPONENT_PICTURE:
             result = self._process_picture(record, ole, bin_data_map, processed_images)
             if result:
                 return result
-        
+
         if record.tag_id == HWPTAG_PARA_TEXT:
             text = record.get_text().replace('\x0b', '')
             if text:
                 parts.append(text)
-        
+
         for child in record.children:
             child_text = self._traverse_tree(child, ole, bin_data_map, processed_images)
             if child_text:
                 parts.append(child_text)
-        
+
         if record.tag_id == HWPTAG_PARA_HEADER:
             parts.append("\n")
-        
+
         return "".join(parts)
-    
+
     def _process_paragraph(self, record: 'HwpRecord', ole, bin_data_map, processed_images) -> str:
         """Process PARA_HEADER record."""
         parts = []
-        
+
         text_rec = next((c for c in record.children if c.tag_id == HWPTAG_PARA_TEXT), None)
         text_content = text_rec.get_text() if text_rec else ""
-        
+
         control_tags = [HWPTAG_CTRL_HEADER, HWPTAG_TABLE]
         controls = [c for c in record.children if c.tag_id in control_tags]
-        
+
         if '\x0b' in text_content:
             segments = text_content.split('\x0b')
             for i, segment in enumerate(segments):
@@ -275,25 +286,25 @@ class HWPHandler(BaseHandler):
             parts.append(text_content)
             for c in controls:
                 parts.append(self._traverse_tree(c, ole, bin_data_map, processed_images))
-        
+
         parts.append("\n")
         return "".join(parts)
-    
+
     def _process_control(self, record: 'HwpRecord', ole, bin_data_map, processed_images) -> Optional[str]:
         """Process CTRL_HEADER record."""
         if len(record.payload) < 4:
             return None
-        
+
         ctrl_id = record.payload[:4][::-1]
-        
+
         if ctrl_id == b'tbl ':
             return parse_table(record, self._traverse_tree, ole, bin_data_map, processed_images)
-        
+
         if ctrl_id == b'gso ':
             return self._process_gso(record, ole, bin_data_map, processed_images)
-        
+
         return None
-    
+
     def _process_gso(self, record: 'HwpRecord', ole, bin_data_map, processed_images) -> Optional[str]:
         """Process GSO (Graphic Shape Object) record."""
         def find_pictures(rec):
@@ -303,7 +314,7 @@ class HWPHandler(BaseHandler):
             for child in rec.children:
                 results.extend(find_pictures(child))
             return results
-        
+
         pictures = find_pictures(record)
         if pictures:
             image_parts = []
@@ -313,77 +324,77 @@ class HWPHandler(BaseHandler):
                     image_parts.append(img_result)
             if image_parts:
                 return "".join(image_parts)
-        
+
         return None
-    
+
     def _process_picture(self, record: 'HwpRecord', ole, bin_data_map, processed_images) -> Optional[str]:
         """Process SHAPE_COMPONENT_PICTURE record."""
         if not bin_data_map or not ole:
             return None
-        
+
         bin_data_list = bin_data_map.get('by_index', [])
         if not bin_data_list:
             return None
-        
+
         image_processor = self.format_image_processor
-        
+
         # Use image processor methods directly
         bindata_index = image_processor.extract_bindata_index(record.payload, len(bin_data_list))
-        
+
         if bindata_index and 0 < bindata_index <= len(bin_data_list):
             storage_id, ext = bin_data_list[bindata_index - 1]
             if storage_id > 0:
                 target_stream = image_processor.find_bindata_stream(ole, storage_id, ext)
                 if target_stream:
                     return image_processor.extract_and_save_image(ole, target_stream, processed_images)
-        
+
         if len(bin_data_list) == 1:
             storage_id, ext = bin_data_list[0]
             if storage_id > 0:
                 target_stream = image_processor.find_bindata_stream(ole, storage_id, ext)
                 if target_stream:
                     return image_processor.extract_and_save_image(ole, target_stream, processed_images)
-        
+
         return None
-    
+
     def _process_corrupted_hwp(self, current_file: "CurrentFile") -> str:
         """Attempt forensic recovery of corrupted HWP file."""
         file_path = current_file.get("file_path", "unknown")
         file_data = current_file.get("file_data", b"")
-        
+
         self.logger.info(f"Starting forensic recovery for: {file_path}")
         text_content = []
-        
+
         try:
             raw_data = file_data
-            
+
             file_type = check_file_signature(raw_data)
             if file_type == "HWP3.0":
                 return "[HWP 3.0 Format - Not Supported]"
-            
+
             zlib_chunks = find_zlib_streams(raw_data, min_size=50)
-            
+
             for offset, decompressed in zlib_chunks:
                 parsed_text = self._parse_section(decompressed)
                 if not parsed_text or not parsed_text.strip():
                     parsed_text = extract_text_from_stream_raw(decompressed)
                 if parsed_text and len(parsed_text.strip()) > 0:
                     text_content.append(parsed_text)
-            
+
             if not text_content:
                 plain_text = extract_text_from_stream_raw(raw_data)
                 if plain_text and len(plain_text) > 100:
                     text_content.append(plain_text)
-            
+
             image_text = recover_images_from_raw(raw_data, image_processor=self.format_image_processor)
             if image_text:
                 text_content.append(f"\n\n=== Recovered Images ===\n{image_text}")
-        
+
         except Exception as e:
             self.logger.error(f"Forensic recovery failed: {e}")
             return f"Forensic recovery failed: {str(e)}"
-        
+
         if not text_content:
             return "[Forensic Recovery: No text found]"
-        
+
         return "\n".join(text_content)

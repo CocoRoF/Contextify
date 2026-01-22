@@ -123,29 +123,34 @@ TableDetectionStrategy = TableDetectionStrategyType
 class PDFHandler(BaseHandler):
     """
     PDF Document Handler
-    
+
     Inherits from BaseHandler to manage config and image_processor at instance level.
     All internal methods access these via self.config, self.image_processor.
-    
+
     Usage:
         handler = PDFHandler(config=config, image_processor=image_processor)
         text = handler.extract_text(current_file)
     """
-    
+
     def _create_file_converter(self):
         """Create PDF-specific file converter."""
         from contextifier.core.processor.pdf_helpers.pdf_file_converter import PDFFileConverter
         return PDFFileConverter()
-    
+
+    def _create_preprocessor(self):
+        """Create PDF-specific preprocessor."""
+        from contextifier.core.processor.pdf_helpers.pdf_preprocessor import PDFPreprocessor
+        return PDFPreprocessor()
+
     def _create_chart_extractor(self):
         """PDF chart extraction not yet implemented. Return NullChartExtractor."""
         from contextifier.core.functions.chart_extractor import NullChartExtractor
         return NullChartExtractor(self._chart_processor)
-    
+
     def _create_metadata_extractor(self):
         """Create PDF-specific metadata extractor."""
         return PDFMetadataExtractor()
-    
+
     def _create_format_image_processor(self):
         """Create PDF-specific image processor."""
         return PDFImageProcessor(
@@ -154,7 +159,7 @@ class PDFHandler(BaseHandler):
             tag_suffix=self._image_processor.config.tag_suffix,
             storage_backend=self._image_processor.storage_backend,
         )
-    
+
     def extract_text(
         self,
         current_file: "CurrentFile",
@@ -163,19 +168,19 @@ class PDFHandler(BaseHandler):
     ) -> str:
         """
         Extract text from PDF file.
-        
+
         Args:
             current_file: CurrentFile dict containing file info and binary data
             extract_metadata: Whether to extract metadata
             **kwargs: Additional options
-            
+
         Returns:
             Extracted text
         """
         file_path = current_file.get("file_path", "unknown")
         self.logger.info(f"[PDF] Processing: {file_path}")
         return self._extract_pdf(current_file, extract_metadata)
-    
+
     def _extract_pdf(
         self,
         current_file: "CurrentFile",
@@ -183,20 +188,25 @@ class PDFHandler(BaseHandler):
     ) -> str:
         """
         Enhanced PDF processing - adaptive complexity-based.
-        
+
         Args:
             current_file: CurrentFile dict containing file info and binary data
             extract_metadata: Whether to extract metadata
-            
+
         Returns:
             Extracted text
         """
         file_path = current_file.get("file_path", "unknown")
         file_data = current_file.get("file_data", b"")
-        
+
         try:
-            # Use FileConverter to convert binary to fitz.Document
+            # Step 1: Use FileConverter to convert binary to fitz.Document
             doc = self.file_converter.convert(file_data)
+
+            # Step 2: Preprocess - may transform doc in the future
+            preprocessed = self.preprocess(doc)
+            doc = preprocessed.clean_content  # TRUE SOURCE
+
             all_pages_text = []
             processed_images: Set[int] = set()
 
@@ -549,7 +559,7 @@ def extract_text_from_pdf(
 ) -> str:
     """
     PDF text extraction (legacy function interface).
-    
+
     This function creates a PDFHandler instance and delegates to it.
     For new code, consider using PDFHandler class directly.
 
@@ -563,13 +573,13 @@ def extract_text_from_pdf(
     """
     if current_config is None:
         current_config = {}
-    
+
     # Extract image_processor from config if available
     image_processor = current_config.get("image_processor")
-    
+
     # Create handler instance with config and image_processor
     handler = PDFHandler(config=current_config, image_processor=image_processor)
-    
+
     return handler.extract_text(file_path, extract_metadata=extract_default_metadata)
 
 
@@ -584,4 +594,3 @@ def _extract_pdf(
 ) -> str:
     """Deprecated: Use PDFHandler.extract_text() instead."""
     return extract_text_from_pdf(file_path, current_config, extract_default_metadata)
-

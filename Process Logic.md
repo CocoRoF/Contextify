@@ -29,23 +29,41 @@ User calls: processor.extract_chunks(file_path)
 ```
 PDFHandler.extract_text(current_file)
     │
-    ├─► file_converter.convert()                        [INTERFACE: PDFFileConverter]
+    ├─► file_converter.convert(file_data)               [INTERFACE: PDFFileConverter]
     │       └─► Binary → fitz.Document
     │
+    ├─► preprocessor.preprocess(doc)                    [INTERFACE: PDFPreprocessor]
+    │       └─► Pass-through (returns PreprocessedData with doc unchanged)
+    │
     ├─► metadata_extractor.extract()                    [INTERFACE: PDFMetadataExtractor]
-    ├─► metadata_extractor.format()                     [INTERFACE: PDFMetadataExtractor]
+    │
+    ├─► _extract_all_tables(doc, file_path)             [INTERNAL]
     │
     └─► For each page:
             │
-            ├─► page_tag_processor.create_page_tag()    [INTERFACE: PageTagProcessor]
+            ├─► ComplexityAnalyzer.analyze()            [CLASS: pdf_complexity_analyzer]
+            │       └─► Returns PageComplexity with recommended_strategy
             │
-            ├─► format_image_processor.extract_images_from_page()   [INTERFACE: PDFImageProcessor]
+            ├─► Branch by strategy:
+            │       │
+            │       ├─► FULL_PAGE_OCR:
+            │       │       └─► _process_page_full_ocr()
+            │       │
+            │       ├─► BLOCK_IMAGE_OCR:
+            │       │       └─► _process_page_block_ocr()
+            │       │
+            │       ├─► HYBRID:
+            │       │       └─► _process_page_hybrid()
+            │       │
+            │       └─► TEXT_EXTRACTION (default):
+            │               └─► _process_page_text_extraction()
+            │                       │
+            │                       ├─► VectorTextOCREngine.detect_and_extract()
+            │                       ├─► extract_text_blocks()           [FUNCTION]
+            │                       ├─► format_image_processor methods  [INTERFACE: PDFImageProcessor]
+            │                       └─► merge_page_elements()           [FUNCTION]
             │
-            ├─► extract_text_blocks()                   [FUNCTION]
-            │
-            ├─► extract_all_tables()                    [FUNCTION]
-            │
-            └─► merge_page_elements()                   [FUNCTION]
+            └─► page_tag_processor.create_page_tag()    [INTERFACE: PageTagProcessor]
 ```
 
 ---
@@ -55,23 +73,34 @@ PDFHandler.extract_text(current_file)
 ```
 DOCXHandler.extract_text(current_file)
     │
-    ├─► file_converter.convert()                        [INTERFACE: DOCXFileConverter]
+    ├─► file_converter.validate(file_data)              [INTERFACE: DOCXFileConverter]
+    │       └─► Check if valid ZIP with [Content_Types].xml
+    │
+    ├─► If not valid DOCX:
+    │       └─► _extract_with_doc_handler_fallback()    [INTERNAL]
+    │               └─► DOCHandler.extract_text()       [DELEGATION]
+    │
+    ├─► file_converter.convert(file_data)               [INTERFACE: DOCXFileConverter]
     │       └─► Binary → docx.Document
     │
-    ├─► metadata_extractor.extract()                    [INTERFACE: DOCXMetadataExtractor]
-    ├─► metadata_extractor.format()                     [INTERFACE: DOCXMetadataExtractor]
+    ├─► preprocessor.preprocess(doc)                    [INTERFACE: DOCXPreprocessor]
+    │       └─► Returns PreprocessedData (doc in extracted_resources)
     │
     ├─► chart_extractor.extract_all_from_file()         [INTERFACE: DOCXChartExtractor]
+    │       └─► Pre-extract all charts (callback pattern)
     │
-    └─► For each element in doc.body:
+    ├─► metadata_extractor.extract()                    [INTERFACE: DOCXMetadataExtractor]
+    │
+    └─► For each element in doc.element.body:
             │
-            ├─► process_paragraph_element()             [FUNCTION]
-            │       │
-            │       ├─► format_image_processor.process_drawing_element()  [INTERFACE: DOCXImageProcessor]
-            │       │
-            │       └─► format_image_processor.extract_from_pict()        [INTERFACE: DOCXImageProcessor]
+            ├─► If paragraph ('p'):
+            │       └─► process_paragraph_element()     [FUNCTION: docx_helper]
+            │               ├─► format_image_processor.process_drawing_element()
+            │               ├─► format_image_processor.extract_from_pict()
+            │               └─► get_next_chart() callback for charts
             │
-            └─► process_table_element()                 [FUNCTION]
+            └─► If table ('tbl'):
+                    └─► process_table_element()         [FUNCTION: docx_helper]
 ```
 
 ---
@@ -85,26 +114,32 @@ DOCHandler.extract_text(current_file)
     │       │
     │       ├─► _detect_format() → DocFormat (RTF/OLE/HTML/DOCX)
     │       │
-    │       ├─► RTF: _convert_rtf() → RTFDocument       [see RTF Handler Flow below]
+    │       ├─► RTF: file_data (bytes) 반환             [Pass-through]
     │       ├─► OLE: _convert_ole() → olefile.OleFileIO
     │       ├─► HTML: _convert_html() → BeautifulSoup
     │       └─► DOCX: _convert_docx() → docx.Document
     │
+    ├─► preprocessor.preprocess(converted_obj)          [INTERFACE: DOCPreprocessor]
+    │       └─► Returns PreprocessedData (converted_obj in extracted_resources)
+    │
     ├─► RTF format detected:
     │       └─► _delegate_to_rtf_handler()              [DELEGATION]
-    │               └─► RTFHandler.extract_from_rtf_document()
+    │               └─► RTFHandler.extract_text(current_file)
     │
     ├─► OLE format detected:
-    │       ├─► _extract_ole_metadata()                 [INTERNAL]
-    │       ├─► _extract_ole_text()                     [INTERNAL]
-    │       └─► _extract_ole_images()                   [INTERNAL]
+    │       └─► _extract_from_ole_obj()                 [INTERNAL]
+    │               ├─► _extract_ole_metadata()
+    │               ├─► _extract_ole_text()
+    │               └─► _extract_ole_images()
     │
     ├─► HTML format detected:
-    │       ├─► _extract_html_metadata()                [INTERNAL]
-    │       └─► BeautifulSoup parsing                   [EXTERNAL LIBRARY]
+    │       └─► _extract_from_html_obj()                [INTERNAL]
+    │               ├─► _extract_html_metadata()
+    │               └─► BeautifulSoup parsing
     │
     └─► DOCX format detected:
-            └─► DOCXHandler delegation                  [DELEGATION]
+            └─► _extract_from_docx_obj()                [INTERNAL]
+                    └─► docx.Document paragraph/table extraction
 ```
 
 ---
@@ -149,25 +184,26 @@ RTFHandler.extract_text(current_file)
 ```
 ExcelHandler.extract_text(current_file) [XLSX]
     │
-    ├─► file_converter.convert()                        [INTERFACE: ExcelFileConverter]
+    ├─► file_converter.convert(file_data, extension='xlsx')  [INTERFACE: ExcelFileConverter]
     │       └─► Binary → openpyxl.Workbook
     │
-    ├─► metadata_extractor.extract()                    [INTERFACE: XLSXMetadataExtractor]
-    ├─► metadata_extractor.format()                     [INTERFACE: XLSXMetadataExtractor]
+    ├─► preprocessor.preprocess(wb)                     [INTERFACE: ExcelPreprocessor]
+    │       └─► Returns PreprocessedData (wb in extracted_resources)
     │
-    ├─► chart_extractor.extract_all_from_file()         [INTERFACE: ExcelChartExtractor]
-    │
-    ├─► format_image_processor.extract_images_from_xlsx()  [INTERFACE: ExcelImageProcessor]
+    ├─► _preload_xlsx_data()                            [INTERNAL]
+    │       ├─► metadata_extractor.extract()            [INTERFACE: XLSXMetadataExtractor]
+    │       ├─► chart_extractor.extract_all_from_file() [INTERFACE: ExcelChartExtractor]
+    │       └─► format_image_processor.extract_images() [INTERFACE: ExcelImageProcessor]
     │
     └─► For each sheet:
             │
-            ├─► page_tag_processor.create_sheet_tag()   [INTERFACE: PageTagProcessor]
-            │
-            ├─► format_image_processor.get_sheet_images()  [INTERFACE: ExcelImageProcessor]
-            │
             ├─► _process_xlsx_sheet()                   [INTERNAL]
+            │       ├─► page_tag_processor.create_sheet_tag()  [INTERFACE: PageTagProcessor]
+            │       ├─► extract_textboxes_from_xlsx()   [FUNCTION]
+            │       ├─► convert_xlsx_sheet_to_table()   [FUNCTION]
+            │       └─► convert_xlsx_objects_to_tables()[FUNCTION]
             │
-            └─► format_image_processor.process_sheet_images()  [INTERFACE: ExcelImageProcessor]
+            └─► format_image_processor.get_sheet_images()  [INTERFACE: ExcelImageProcessor]
 ```
 
 ---
@@ -177,17 +213,21 @@ ExcelHandler.extract_text(current_file) [XLSX]
 ```
 ExcelHandler.extract_text(current_file) [XLS]
     │
-    ├─► file_converter.convert()                        [INTERFACE: XLSFileConverter]
+    ├─► file_converter.convert(file_data, extension='xls')   [INTERFACE: ExcelFileConverter]
     │       └─► Binary → xlrd.Book
     │
-    ├─► metadata_extractor.extract()                    [INTERFACE: XLSMetadataExtractor]
-    ├─► metadata_extractor.format()                     [INTERFACE: XLSMetadataExtractor]
+    ├─► preprocessor.preprocess(wb)                     [INTERFACE: ExcelPreprocessor]
+    │       └─► Returns PreprocessedData (wb in extracted_resources)
+    │
+    ├─► _get_xls_metadata_extractor().extract_and_format()   [INTERFACE: XLSMetadataExtractor]
     │
     └─► For each sheet:
             │
             ├─► page_tag_processor.create_sheet_tag()   [INTERFACE: PageTagProcessor]
             │
-            └─► _process_xls_sheet()                    [INTERNAL]
+            ├─► convert_xls_sheet_to_table()            [FUNCTION]
+            │
+            └─► convert_xls_objects_to_tables()         [FUNCTION]
 ```
 
 ---
@@ -197,21 +237,29 @@ ExcelHandler.extract_text(current_file) [XLS]
 ```
 PPTHandler.extract_text(current_file)
     │
-    ├─► file_converter.convert()                        [INTERFACE: PPTFileConverter]
+    ├─► file_converter.convert(file_data, file_stream)  [INTERFACE: PPTFileConverter]
     │       └─► Binary → pptx.Presentation
+    │
+    ├─► preprocessor.preprocess(prs)                    [INTERFACE: PPTPreprocessor]
+    │       └─► Returns PreprocessedData (prs in extracted_resources)
+    │
+    ├─► chart_extractor.extract_all_from_file()         [INTERFACE: PPTChartExtractor]
+    │       └─► Pre-extract all charts (callback pattern)
     │
     ├─► metadata_extractor.extract()                    [INTERFACE: PPTMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: PPTMetadataExtractor]
-    │
-    ├─► chart_extractor.extract_all_from_file()         [INTERFACE: PPTChartExtractor]
     │
     └─► For each slide:
             │
             ├─► page_tag_processor.create_slide_tag()   [INTERFACE: PageTagProcessor]
             │
-            ├─► format_image_processor.extract_from_slide()  [INTERFACE: PPTImageProcessor]
-            │
-            └─► _process_shapes()                       [INTERNAL]
+            └─► For each shape:
+                    │
+                    ├─► If table: convert_table_to_html()       [FUNCTION]
+                    ├─► If chart: get_next_chart() callback     [Pre-extracted]
+                    ├─► If picture: process_image_shape()       [FUNCTION]
+                    ├─► If group: process_group_shape()         [FUNCTION]
+                    └─► If text: extract_text_with_bullets()    [FUNCTION]
 ```
 
 ---
@@ -221,26 +269,38 @@ PPTHandler.extract_text(current_file)
 ```
 HWPHandler.extract_text(current_file)
     │
+    ├─► file_converter.validate(file_data)              [INTERFACE: HWPFileConverter]
+    │       └─► Check if OLE file (magic number check)
+    │
+    ├─► If not OLE file:
+    │       └─► _handle_non_ole_file()                  [INTERNAL]
+    │               ├─► ZIP detected → HWPXHandler delegation
+    │               └─► HWP 3.0 → Not supported
+    │
+    ├─► chart_extractor.extract_all_from_file()         [INTERFACE: HWPChartExtractor]
+    │
     ├─► file_converter.convert()                        [INTERFACE: HWPFileConverter]
     │       └─► Binary → olefile.OleFileIO
     │
+    ├─► preprocessor.preprocess(ole)                    [INTERFACE: HWPPreprocessor]
+    │       └─► Returns PreprocessedData (ole in extracted_resources)
+    │
     ├─► metadata_extractor.extract()                    [INTERFACE: HWPMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: HWPMetadataExtractor]
-    │
-    ├─► chart_extractor.extract_all_from_file()         [INTERFACE: HWPChartExtractor]
     │
     ├─► _parse_docinfo(ole)                             [INTERNAL]
     │       └─► parse_doc_info()                        [FUNCTION]
     │
     ├─► _extract_body_text(ole)                         [INTERNAL]
     │       │
-    │       └─► _process_picture(record)                [INTERNAL]
-    │               │
-    │               ├─► format_image_processor.extract_bindata_index()     [INTERFACE: HWPImageProcessor]
-    │               ├─► format_image_processor.find_bindata_stream()       [INTERFACE: HWPImageProcessor]
-    │               └─► format_image_processor.extract_and_save_image()    [INTERFACE: HWPImageProcessor]
+    │       └─► For each section:
+    │               ├─► decompress_section()            [FUNCTION]
+    │               └─► _parse_section()                [INTERNAL]
+    │                       └─► _process_picture()      [INTERNAL - format_image_processor 사용]
     │
-    └─► format_image_processor.process_images_from_bindata()  [INTERFACE: HWPImageProcessor]
+    ├─► format_image_processor.process_images_from_bindata()  [INTERFACE: HWPImageProcessor]
+    │
+    └─► file_converter.close(ole)                       [INTERFACE: HWPFileConverter]
 ```
 
 ---
@@ -250,15 +310,22 @@ HWPHandler.extract_text(current_file)
 ```
 HWPXHandler.extract_text(current_file)
     │
-    ├─► file_converter.convert()                        [INTERFACE: HWPXFileConverter]
-    │       └─► Binary → zipfile.ZipFile
+    ├─► get_file_stream(current_file)                   [INHERITED: BaseHandler]
+    │       └─► BytesIO(file_data)
+    │
+    ├─► _is_valid_zip(file_stream)                      [INTERNAL]
+    │
+    ├─► chart_extractor.extract_all_from_file()         [INTERFACE: HWPXChartExtractor]
+    │
+    ├─► zipfile.ZipFile(file_stream)                    [EXTERNAL LIBRARY]
+    │
+    ├─► preprocessor.preprocess(zf)                     [INTERFACE: HWPXPreprocessor]
+    │       └─► Returns PreprocessedData (extracted_resources available)
     │
     ├─► metadata_extractor.extract()                    [INTERFACE: HWPXMetadataExtractor]
     ├─► metadata_extractor.format()                     [INTERFACE: HWPXMetadataExtractor]
     │
-    ├─► chart_extractor.extract_all_from_file()         [INTERFACE: HWPXChartExtractor]
-    │
-    ├─► format_image_processor.process_from_zip()       [INTERFACE: HWPXImageProcessor]
+    ├─► parse_bin_item_map(zf)                          [FUNCTION]
     │
     ├─► For each section:
     │       │
@@ -269,7 +336,7 @@ HWPXHandler.extract_text(current_file)
     │               └─► parse_hwpx_table()              [FUNCTION]
     │
     └─► format_image_processor.get_remaining_images()   [INTERFACE: HWPXImageProcessor]
-        format_image_processor.process_remaining_images()  [INTERFACE: HWPXImageProcessor]
+        format_image_processor.process_images()         [INTERFACE: HWPXImageProcessor]
 ```
 
 ---
@@ -279,15 +346,23 @@ HWPXHandler.extract_text(current_file)
 ```
 CSVHandler.extract_text(current_file)
     │
-    ├─► file_converter.convert()                        [INTERFACE: CSVFileConverter]
+    ├─► file_converter.convert(file_data, encoding)     [INTERFACE: CSVFileConverter]
     │       └─► Binary → Text (with encoding detection)
     │
-    ├─► metadata_extractor.extract()                    [INTERFACE: CSVMetadataExtractor]
-    ├─► metadata_extractor.format()                     [INTERFACE: CSVMetadataExtractor]
+    ├─► preprocessor.preprocess(content)                [INTERFACE: CSVPreprocessor]
+    │       └─► Returns PreprocessedData (content in clean_content)
     │
-    ├─► CSVParser.parse()                               [FUNCTION]
+    ├─► detect_delimiter(content)                       [FUNCTION]
     │
-    └─► CSVTable.to_html()                              [FUNCTION]
+    ├─► parse_csv_content(content, delimiter)           [FUNCTION]
+    │
+    ├─► detect_header(rows)                             [FUNCTION]
+    │
+    ├─► metadata_extractor.extract(source_info)         [INTERFACE: CSVMetadataExtractor]
+    │       └─► CSVSourceInfo contains: file_path, encoding, delimiter, rows, has_header
+    │
+    └─► convert_rows_to_table(rows, has_header)         [FUNCTION]
+            └─► Returns HTML table
 ```
 
 ---
@@ -297,27 +372,37 @@ CSVHandler.extract_text(current_file)
 ```
 TextHandler.extract_text(current_file)
     │
-    ├─► file_converter.convert()                        [INTERFACE: TextFileConverter]
-    │       └─► Binary → Text (with encoding detection)
+    ├─► preprocessor.preprocess(file_data)              [INTERFACE: TextPreprocessor]
+    │       └─► Returns PreprocessedData (file_data in clean_content)
     │
-    ├─► metadata_extractor.extract()                    [INTERFACE: TextMetadataExtractor]
-    ├─► metadata_extractor.format()                     [INTERFACE: TextMetadataExtractor]
+    ├─► file_data.decode(encoding)                      [DIRECT: No FileConverter used]
+    │       └─► Try encodings: utf-8, utf-8-sig, cp949, euc-kr, latin-1, ascii
     │
-    └─► decode_text()                                   [FUNCTION]
+    └─► clean_text() / clean_code_text()                [FUNCTION: utils.py]
 ```
+
+Note: TextHandler는 file_converter를 사용하지 않고 직접 decode합니다.
 
 ---
 
 ## HTML Handler Flow
 
 ```
-HTMLReprocessor.extract_text(current_file)
+HTMLReprocessor (Utility - NOT a BaseHandler subclass)
     │
-    ├─► file_converter.convert()                        [INTERFACE: HTMLFileConverter]
-    │       └─► Binary → BeautifulSoup
+    ├─► clean_html_file(html_content)                   [FUNCTION]
+    │       │
+    │       ├─► BeautifulSoup parsing
+    │       ├─► Remove unwanted tags (script, style, etc.)
+    │       ├─► Remove style attributes
+    │       ├─► _process_table_merged_cells()
+    │       └─► Return cleaned HTML string
     │
-    └─► BeautifulSoup parsing                           [EXTERNAL LIBRARY]
+    └─► Used by DOCHandler when HTML format detected
 ```
+
+Note: HTML은 별도의 BaseHandler 서브클래스가 없습니다.
+      DOCHandler가 HTML 형식을 감지하면 내부적으로 BeautifulSoup으로 처리합니다.
 
 ---
 
@@ -326,14 +411,22 @@ HTMLReprocessor.extract_text(current_file)
 ```
 ImageFileHandler.extract_text(current_file)
     │
-    ├─► file_converter.convert()                        [INTERFACE: ImageFileConverter]
-    │       └─► Binary → Binary (pass-through)
+    ├─► preprocessor.preprocess(file_data)              [INTERFACE: ImageFilePreprocessor]
+    │       └─► Returns PreprocessedData (file_data in clean_content)
     │
-    ├─► metadata_extractor.extract()                    [INTERFACE: ImageFileMetadataExtractor]
-    ├─► metadata_extractor.format()                     [INTERFACE: ImageFileMetadataExtractor]
+    ├─► Validate file extension                         [INTERNAL]
+    │       └─► SUPPORTED_IMAGE_EXTENSIONS: jpg, jpeg, png, gif, bmp, webp
     │
-    └─► format_image_processor.save_image()             [INTERFACE: ImageFileImageProcessor]
+    ├─► If OCR engine is None:
+    │       └─► _build_image_tag(file_path)             [INTERNAL]
+    │               └─► Return [image:path] tag
+    │
+    └─► If OCR engine available:
+            └─► _ocr_engine.extract_text()              [INTERFACE: BaseOCR]
+                    └─► Image → Text via OCR
 ```
+
+Note: ImageFileHandler는 OCR 엔진이 설정된 경우에만 실제 텍스트 추출이 가능합니다.
 
 ---
 
@@ -365,26 +458,58 @@ chunk_text(text, chunk_size, chunk_overlap)
 ## Interface Integration Summary
 
 ```
-┌─────────────┬─────────────────────┬─────────────────────┬─────────────────────┬─────────────────────┐
-│ Handler     │ FileConverter       │ MetadataExtractor   │ ChartExtractor      │ FormatImageProcessor│
-├─────────────┼─────────────────────┼─────────────────────┼─────────────────────┼─────────────────────┤
-│ PDF         │ ✅ PDFFile           │ ✅ PDFMetadata       │ ✅ PDFChart          │ ✅ PDFImage          │
-│ DOCX        │ ✅ DOCXFile          │ ✅ DOCXMetadata      │ ✅ DOCXChart         │ ✅ DOCXImage         │
-│ DOC         │ ✅ DOCFile           │ ❌ NullMetadata      │ ❌ NullChart         │ ✅ DOCImage          │
-│ RTF         │ ✅ RTFFile (pass)    │ ✅ RTFMetadata       │ ❌ NullChart         │ ✅ RTFPreprocessor   │
-│ XLSX        │ ✅ XLSXFile          │ ✅ XLSXMetadata      │ ✅ ExcelChart        │ ✅ ExcelImage        │
-│ XLS         │ ✅ XLSFile           │ ✅ XLSMetadata       │ ❌ NullChart         │ ✅ ExcelImage        │
-│ PPT/PPTX    │ ✅ PPTFile           │ ✅ PPTMetadata       │ ✅ PPTChart          │ ✅ PPTImage          │
-│ HWP         │ ✅ HWPFile           │ ✅ HWPMetadata       │ ✅ HWPChart          │ ✅ HWPImage          │
-│ HWPX        │ ✅ HWPXFile          │ ✅ HWPXMetadata      │ ✅ HWPXChart         │ ✅ HWPXImage         │
-│ CSV         │ ✅ CSVFile           │ ✅ CSVMetadata       │ ❌ NullChart         │ ❌ None              │
-│ TXT/MD/JSON │ ✅ TextFile          │ ✅ TextMetadata      │ ❌ NullChart         │ ❌ None              │
-│ HTML        │ ✅ HTMLFile          │ ❌ None              │ ❌ NullChart         │ ❌ None              │
-│ Image Files │ ✅ ImageFile (pass)  │ ✅ ImageFileMeta     │ ❌ NullChart         │ ✅ ImageFileImage    │
-└─────────────┴─────────────────────┴─────────────────────┴─────────────────────┴─────────────────────┘
+┌─────────────┬─────────────────────┬─────────────────────┬─────────────────────┬─────────────────────┬─────────────────────┐
+│ Handler     │ FileConverter       │ Preprocessor        │ MetadataExtractor   │ ChartExtractor      │ FormatImageProcessor│
+├─────────────┼─────────────────────┼─────────────────────┼─────────────────────┼─────────────────────┼─────────────────────┤
+│ PDF         │ ✅ PDFFileConverter  │ ✅ PDFPreprocessor   │ ✅ PDFMetadata       │ ❌ NullChart         │ ✅ PDFImage          │
+│ DOCX        │ ✅ DOCXFileConverter │ ✅ DOCXPreprocessor  │ ✅ DOCXMetadata      │ ✅ DOCXChart         │ ✅ DOCXImage         │
+│ DOC         │ ✅ DOCFileConverter  │ ✅ DOCPreprocessor   │ ❌ NullMetadata      │ ❌ NullChart         │ ✅ DOCImage          │
+│ RTF         │ ✅ RTFFileConverter  │ ✅ RTFPreprocessor*  │ ✅ RTFMetadata       │ ❌ NullChart         │ ❌ Uses base         │
+│ XLSX        │ ✅ ExcelFileConverter│ ✅ ExcelPreprocessor │ ✅ XLSXMetadata      │ ✅ ExcelChart        │ ✅ ExcelImage        │
+│ XLS         │ ✅ ExcelFileConverter│ ✅ ExcelPreprocessor │ ✅ XLSMetadata       │ ✅ ExcelChart        │ ✅ ExcelImage        │
+│ PPT/PPTX    │ ✅ PPTFileConverter  │ ✅ PPTPreprocessor   │ ✅ PPTMetadata       │ ✅ PPTChart          │ ✅ PPTImage          │
+│ HWP         │ ✅ HWPFileConverter  │ ✅ HWPPreprocessor   │ ✅ HWPMetadata       │ ✅ HWPChart          │ ✅ HWPImage          │
+│ HWPX        │ ❌ None (직접 ZIP)   │ ✅ HWPXPreprocessor  │ ✅ HWPXMetadata      │ ✅ HWPXChart         │ ✅ HWPXImage         │
+│ CSV         │ ✅ CSVFileConverter  │ ✅ CSVPreprocessor   │ ✅ CSVMetadata       │ ❌ NullChart         │ ✅ CSVImage          │
+│ TXT/MD/JSON │ ❌ None (직접 decode)│ ✅ TextPreprocessor  │ ❌ NullMetadata      │ ❌ NullChart         │ ✅ TextImage         │
+│ HTML        │ ❌ N/A (유틸리티)    │ ❌ N/A               │ ❌ N/A               │ ❌ N/A               │ ❌ N/A               │
+│ Image Files │ ✅ ImageFileConverter│ ✅ ImagePreprocessor │ ❌ NullMetadata      │ ❌ NullChart         │ ✅ ImageFileImage    │
+└─────────────┴─────────────────────┴─────────────────────┴─────────────────────┴─────────────────────┴─────────────────────┘
 
-✅ = Interface implemented correctly
-❌ = Not applicable / NullExtractor
+✅ = Interface implemented
+❌ = Not applicable / NullExtractor / Not used
+* = RTFPreprocessor has actual processing logic (image extraction, binary cleanup)
+```
+
+---
+
+## Handler Processing Pipeline
+
+모든 핸들러는 동일한 처리 파이프라인을 따릅니다:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                           Handler Processing Pipeline                             │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                   │
+│  1. FileConverter.convert()     Binary → Format-specific object                  │
+│         │                       (fitz.Document, docx.Document, olefile, etc.)    │
+│         ▼                                                                         │
+│  2. Preprocessor.preprocess()   Process/clean the converted data                 │
+│         │                       (image extraction, binary cleanup, encoding)     │
+│         ▼                                                                         │
+│  3. MetadataExtractor.extract() Extract document metadata                        │
+│         │                       (title, author, created date, etc.)              │
+│         ▼                                                                         │
+│  4. Content Extraction          Format-specific content extraction               │
+│         │                       (text, tables, images, charts)                   │
+│         ▼                                                                         │
+│  5. Result Assembly             Build final result string                        │
+│                                                                                   │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+Note: 대부분의 핸들러에서 Preprocessor는 pass-through (NullPreprocessor).
+      RTF는 예외로, RTFPreprocessor에서 실제 바이너리 처리가 이루어짐.
 ```
 
 ---
@@ -395,23 +520,37 @@ chunk_text(text, chunk_size, chunk_overlap)
 ┌─────────────┬────────────────────────────────────────────────────────────┐
 │ Handler     │ Function-Based Components                                  │
 ├─────────────┼────────────────────────────────────────────────────────────┤
-│ PDF         │ extract_text_blocks(), extract_all_tables(),              │
-│             │ merge_page_elements()                                      │
+│ PDF         │ extract_text_blocks(), merge_page_elements(),             │
+│             │ ComplexityAnalyzer, VectorTextOCREngine,                  │
+│             │ BlockImageEngine                                          │
 ├─────────────┼────────────────────────────────────────────────────────────┤
 │ DOCX        │ process_paragraph_element(), process_table_element()      │
 ├─────────────┼────────────────────────────────────────────────────────────┤
-│ DOC         │ Format detection, OLE/HTML/DOCX delegation                │
+│ DOC         │ Format detection, OLE/HTML/DOCX internal processing       │
 ├─────────────┼────────────────────────────────────────────────────────────┤
 │ RTF         │ decode_content() (rtf_decoder.py)                         │
 │             │ extract_tables_with_positions() (rtf_table_extractor.py)  │
 │             │ extract_inline_content() (rtf_content_extractor.py)       │
-│             │ clean_rtf_text() (rtf_text_cleaner.py)                    │
 ├─────────────┼────────────────────────────────────────────────────────────┤
-│ HWP         │ parse_doc_info(), parse_table(), decompress_section()     │
+│ Excel       │ extract_textboxes_from_xlsx(), convert_xlsx_sheet_to_table│
+│             │ convert_xls_sheet_to_table(), convert_*_objects_to_tables │
 ├─────────────┼────────────────────────────────────────────────────────────┤
-│ HWPX        │ parse_hwpx_section(), parse_hwpx_table()                  │
+│ PPT         │ extract_text_with_bullets(), convert_table_to_html(),     │
+│             │ process_image_shape(), process_group_shape()              │
 ├─────────────┼────────────────────────────────────────────────────────────┤
-│ CSV         │ CSVParser, CSVTable                                       │
+│ HWP         │ parse_doc_info(), decompress_section()                    │
+├─────────────┼────────────────────────────────────────────────────────────┤
+│ HWPX        │ parse_bin_item_map(), parse_hwpx_section()                │
+├─────────────┼────────────────────────────────────────────────────────────┤
+│ CSV         │ detect_delimiter(), parse_csv_content(), detect_header(), │
+│             │ convert_rows_to_table()                                   │
+├─────────────┼────────────────────────────────────────────────────────────┤
+│ Text        │ clean_text(), clean_code_text() (utils.py)                │
+├─────────────┼────────────────────────────────────────────────────────────┤
+│ HTML        │ clean_html_file(), _process_table_merged_cells()          │
+│             │ (html_reprocessor.py - utility, not handler)              │
+├─────────────┼────────────────────────────────────────────────────────────┤
+│ Image       │ OCR engine integration (BaseOCR subclass)                 │
 ├─────────────┼────────────────────────────────────────────────────────────┤
 │ Chunking    │ create_chunks(), chunk_by_pages(), chunk_plain_text(),    │
 │             │ chunk_multi_sheet_content(), chunk_large_table()          │

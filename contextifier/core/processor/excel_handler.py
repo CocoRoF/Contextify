@@ -56,32 +56,37 @@ logger = logging.getLogger("document-processor")
 class ExcelHandler(BaseHandler):
     """
     Excel Document Handler (XLSX/XLS)
-    
+
     Inherits from BaseHandler to manage config and image_processor at instance level.
-    
+
     Usage:
         handler = ExcelHandler(config=config, image_processor=image_processor)
         text = handler.extract_text(current_file)
     """
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._xlsx_metadata_extractor = None
         self._xls_metadata_extractor = None
-    
+
     def _create_file_converter(self):
         """Create Excel-specific file converter."""
         from contextifier.core.processor.excel_helper.excel_file_converter import ExcelFileConverter
         return ExcelFileConverter()
-    
+
+    def _create_preprocessor(self):
+        """Create Excel-specific preprocessor."""
+        from contextifier.core.processor.excel_helper.excel_preprocessor import ExcelPreprocessor
+        return ExcelPreprocessor()
+
     def _create_chart_extractor(self) -> BaseChartExtractor:
         """Create Excel-specific chart extractor."""
         return ExcelChartExtractor(self._chart_processor)
-    
+
     def _create_metadata_extractor(self):
         """Create XLSX-specific metadata extractor (default)."""
         return XLSXMetadataExtractor()
-    
+
     def _create_format_image_processor(self):
         """Create Excel-specific image processor."""
         return ExcelImageProcessor(
@@ -90,13 +95,13 @@ class ExcelHandler(BaseHandler):
             tag_suffix=self._image_processor.config.tag_suffix,
             storage_backend=self._image_processor.storage_backend,
         )
-    
+
     def _get_xls_metadata_extractor(self):
         """Get XLS-specific metadata extractor."""
         if self._xls_metadata_extractor is None:
             self._xls_metadata_extractor = XLSMetadataExtractor()
         return self._xls_metadata_extractor
-    
+
     def extract_text(
         self,
         current_file: "CurrentFile",
@@ -105,12 +110,12 @@ class ExcelHandler(BaseHandler):
     ) -> str:
         """
         Extract text from Excel file.
-        
+
         Args:
             current_file: CurrentFile dict containing file info and binary data
             extract_metadata: Whether to extract metadata
             **kwargs: Additional options
-            
+
         Returns:
             Extracted text
         """
@@ -126,7 +131,7 @@ class ExcelHandler(BaseHandler):
             return self._extract_xls(current_file, extract_metadata)
         else:
             raise ValueError(f"Unsupported Excel format: {ext}")
-    
+
     def _extract_xlsx(
         self,
         current_file: "CurrentFile",
@@ -137,9 +142,14 @@ class ExcelHandler(BaseHandler):
         self.logger.info(f"XLSX processing: {file_path}")
 
         try:
-            # Convert to Workbook using file_converter
+            # Step 1: Convert to Workbook using file_converter
             file_data = current_file.get("file_data", b"")
             wb = self.file_converter.convert(file_data, extension='xlsx')
+
+            # Step 2: Preprocess - may transform wb in the future
+            preprocessed = self.preprocess(wb)
+            wb = preprocessed.clean_content  # TRUE SOURCE
+
             preload = self._preload_xlsx_data(current_file, wb, extract_metadata)
 
             result_parts = [preload["metadata_str"]] if preload["metadata_str"] else []
@@ -181,9 +191,14 @@ class ExcelHandler(BaseHandler):
         self.logger.info(f"XLS processing: {file_path}")
 
         try:
-            # Convert to Workbook using file_converter
+            # Step 1: Convert to Workbook using file_converter
             file_data = current_file.get("file_data", b"")
             wb = self.file_converter.convert(file_data, extension='xls')
+
+            # Step 2: Preprocess - may transform wb in the future
+            preprocessed = self.preprocess(wb)
+            wb = preprocessed.clean_content  # TRUE SOURCE
+
             result_parts = []
 
             if extract_metadata:
@@ -221,7 +236,7 @@ class ExcelHandler(BaseHandler):
         """Extract preprocessing data from XLSX file."""
         file_path = current_file.get("file_path", "unknown")
         file_stream = self.get_file_stream(current_file)
-        
+
         result = {
             "metadata_str": "",
             "chart_data_list": [],  # ChartData instances from extractor
@@ -237,7 +252,7 @@ class ExcelHandler(BaseHandler):
 
         # Use ChartExtractor for chart extraction
         result["chart_data_list"] = self.chart_extractor.extract_all_from_file(file_stream)
-        
+
         # Use format_image_processor directly for image extraction
         image_processor = self.format_image_processor
         if hasattr(image_processor, 'extract_images_from_xlsx'):
@@ -298,14 +313,14 @@ class ExcelHandler(BaseHandler):
                 stats["textboxes"] += 1
 
         return "".join(parts)
-    
+
     def _format_chart_data(self, chart_data) -> str:
         """Format ChartData using ChartProcessor."""
         from contextifier.core.functions.chart_extractor import ChartData
-        
+
         if not isinstance(chart_data, ChartData):
             return ""
-        
+
         if chart_data.has_data():
             return self.chart_processor.format_chart_data(
                 chart_type=chart_data.chart_type,

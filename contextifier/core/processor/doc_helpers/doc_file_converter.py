@@ -25,19 +25,19 @@ class DocFormat(Enum):
 class DOCFileConverter(BaseFileConverter):
     """
     DOC file converter with format auto-detection.
-    
+
     Detects actual format (RTF, OLE, HTML, DOCX) and converts accordingly.
     """
-    
+
     # Magic numbers for format detection
     MAGIC_RTF = b'{\\rtf'
     MAGIC_OLE = b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'
     MAGIC_ZIP = b'PK\x03\x04'
-    
+
     def __init__(self):
         """Initialize DOCFileConverter."""
         self._detected_format: DocFormat = DocFormat.UNKNOWN
-    
+
     def convert(
         self,
         file_data: bytes,
@@ -46,26 +46,27 @@ class DOCFileConverter(BaseFileConverter):
     ) -> Tuple[Any, DocFormat]:
         """
         Convert binary DOC data to appropriate format.
-        
+
         Args:
             file_data: Raw binary DOC data
             file_stream: Optional file stream
             **kwargs: Additional options
-            
+
         Returns:
             Tuple of (converted object, detected format)
-            - RTF: (RTFDocument, DocFormat.RTF)
+            - RTF: (bytes, DocFormat.RTF) - 원본 바이너리 반환 (RTFHandler에서 처리)
             - OLE: (olefile.OleFileIO, DocFormat.OLE)
             - HTML: (BeautifulSoup, DocFormat.HTML)
             - DOCX: (docx.Document, DocFormat.DOCX)
-            
+
         Raises:
             Exception: If conversion fails
         """
         self._detected_format = self._detect_format(file_data)
-        
+
         if self._detected_format == DocFormat.RTF:
-            return self._convert_rtf(file_data), self._detected_format
+            # RTF는 원본 바이너리 반환 - RTFHandler.extract_text()에서 처리
+            return file_data, self._detected_format
         elif self._detected_format == DocFormat.OLE:
             return self._convert_ole(file_data), self._detected_format
         elif self._detected_format == DocFormat.HTML:
@@ -75,22 +76,22 @@ class DOCFileConverter(BaseFileConverter):
         else:
             # Try OLE as fallback
             return self._convert_ole(file_data), DocFormat.OLE
-    
+
     def _detect_format(self, file_data: bytes) -> DocFormat:
         """Detect actual file format from binary data."""
         if not file_data:
             return DocFormat.UNKNOWN
-        
+
         header = file_data[:32] if len(file_data) >= 32 else file_data
-        
+
         # Check RTF
         if header.startswith(self.MAGIC_RTF):
             return DocFormat.RTF
-        
+
         # Check OLE
         if header.startswith(self.MAGIC_OLE):
             return DocFormat.OLE
-        
+
         # Check ZIP (possible DOCX)
         if header.startswith(self.MAGIC_ZIP):
             try:
@@ -99,32 +100,27 @@ class DOCFileConverter(BaseFileConverter):
                         return DocFormat.DOCX
             except zipfile.BadZipFile:
                 pass
-        
+
         # Check HTML
         header_lower = header.lower()
-        if (header_lower.startswith(b'<!doctype') or 
-            header_lower.startswith(b'<html') or 
+        if (header_lower.startswith(b'<!doctype') or
+            header_lower.startswith(b'<html') or
             b'<html' in header_lower[:100]):
             return DocFormat.HTML
-        
+
         # Check for BOM + RTF
         if header.startswith(b'\xef\xbb\xbf'):
             text_header = header[3:].decode('utf-8', errors='ignore').lower()
             if text_header.startswith('{\\rtf'):
                 return DocFormat.RTF
-        
+
         return DocFormat.UNKNOWN
-    
-    def _convert_rtf(self, file_data: bytes) -> Any:
-        """Convert RTF data."""
-        from contextifier.core.processor.doc_helpers.rtf_parser import parse_rtf
-        return parse_rtf(file_data)
-    
+
     def _convert_ole(self, file_data: bytes) -> Any:
         """Convert OLE data."""
         import olefile
         return olefile.OleFileIO(BytesIO(file_data))
-    
+
     def _convert_html(self, file_data: bytes) -> Any:
         """Convert HTML data."""
         from bs4 import BeautifulSoup
@@ -134,12 +130,12 @@ class DOCFileConverter(BaseFileConverter):
         except UnicodeDecodeError:
             text = file_data.decode('cp949', errors='replace')
         return BeautifulSoup(text, 'html.parser')
-    
+
     def _convert_docx(self, file_data: bytes) -> Any:
         """Convert misnamed DOCX data."""
         from docx import Document
         return Document(BytesIO(file_data))
-    
+
     def get_format_name(self) -> str:
         """Return detected format name."""
         format_names = {
@@ -150,12 +146,12 @@ class DOCFileConverter(BaseFileConverter):
             DocFormat.UNKNOWN: "Unknown DOC Format",
         }
         return format_names.get(self._detected_format, "Unknown")
-    
+
     @property
     def detected_format(self) -> DocFormat:
         """Return detected format after conversion."""
         return self._detected_format
-    
+
     def close(self, converted_object: Any) -> None:
         """Close the converted object if needed."""
         if converted_object is not None:

@@ -63,33 +63,38 @@ logger = logging.getLogger("document-processor")
 class DOCXHandler(BaseHandler):
     """
     DOCX Document Processing Handler
-    
+
     Inherits from BaseHandler to manage config and image_processor at instance level.
-    
+
     Fallback Chain:
     1. Enhanced DOCX processing (python-docx with BytesIO stream)
     2. DOCHandler fallback (for non-ZIP files: RTF, OLE, HTML, etc.)
     3. Simple text extraction
     4. Error message
-    
+
     Usage:
         handler = DOCXHandler(config=config, image_processor=image_processor)
         text = handler.extract_text(current_file)
     """
-    
+
     def _create_file_converter(self):
         """Create DOCX-specific file converter."""
         from contextifier.core.processor.docx_helper.docx_file_converter import DOCXFileConverter
         return DOCXFileConverter()
-    
+
+    def _create_preprocessor(self):
+        """Create DOCX-specific preprocessor."""
+        from contextifier.core.processor.docx_helper.docx_preprocessor import DOCXPreprocessor
+        return DOCXPreprocessor()
+
     def _create_chart_extractor(self) -> BaseChartExtractor:
         """Create DOCX-specific chart extractor."""
         return DOCXChartExtractor(self._chart_processor)
-    
+
     def _create_metadata_extractor(self):
         """Create DOCX-specific metadata extractor."""
         return DOCXMetadataExtractor()
-    
+
     def _create_format_image_processor(self):
         """Create DOCX-specific image processor."""
         return DOCXImageProcessor(
@@ -98,7 +103,7 @@ class DOCXHandler(BaseHandler):
             tag_suffix=self._image_processor.config.tag_suffix,
             storage_backend=self._image_processor.storage_backend,
         )
-    
+
     def extract_text(
         self,
         current_file: "CurrentFile",
@@ -107,19 +112,19 @@ class DOCXHandler(BaseHandler):
     ) -> str:
         """
         Extract text from DOCX file.
-        
+
         Args:
             current_file: CurrentFile dict containing file info and binary data
             extract_metadata: Whether to extract metadata
             **kwargs: Additional options
-            
+
         Returns:
             Extracted text (with inline image tags, table HTML)
         """
         file_path = current_file.get("file_path", "unknown")
         file_data = current_file.get("file_data", b"")
         self.logger.info(f"DOCX processing: {file_path}")
-        
+
         # Check if file is a valid DOCX using file_converter validation
         if self.file_converter.validate(file_data):
             return self._extract_docx_enhanced(current_file, extract_metadata)
@@ -127,7 +132,7 @@ class DOCXHandler(BaseHandler):
             # Not a valid DOCX, try DOCHandler fallback
             self.logger.warning(f"File is not a valid DOCX, trying DOCHandler fallback: {file_path}")
             return self._extract_with_doc_handler_fallback(current_file, extract_metadata)
-    
+
     def _extract_with_doc_handler_fallback(
         self,
         current_file: "CurrentFile",
@@ -135,41 +140,41 @@ class DOCXHandler(BaseHandler):
     ) -> str:
         """
         Fallback to DOCHandler for non-ZIP files.
-        
+
         Handles RTF, OLE, HTML, and other formats that might be
         incorrectly named as .docx files.
         """
         file_path = current_file.get("file_path", "unknown")
-        
+
         try:
             from contextifier.core.processor.doc_handler import DOCHandler
-            
+
             doc_handler = DOCHandler(
                 config=self.config,
                 image_processor=self.format_image_processor
             )
-            
+
             # DOCHandler still uses file_path, so pass it directly
             result = doc_handler.extract_text(current_file, extract_metadata=extract_metadata)
-            
+
             if result and not result.startswith("[DOC"):
                 self.logger.info(f"DOCHandler fallback successful for: {file_path}")
                 return result
             else:
                 # DOCHandler also failed, try simple extraction
                 return self._extract_simple_text_fallback(current_file)
-                
+
         except Exception as e:
             self.logger.error(f"DOCHandler fallback failed: {e}")
             return self._extract_simple_text_fallback(current_file)
-    
+
     def _extract_simple_text_fallback(self, current_file: "CurrentFile") -> str:
         """
         Last resort: try to extract any readable text from the file.
         """
         file_path = current_file.get("file_path", "unknown")
         file_data = current_file.get("file_data", b"")
-        
+
         try:
             # Try different encodings
             for encoding in ['utf-8', 'cp949', 'euc-kr', 'latin-1']:
@@ -179,20 +184,20 @@ class DOCXHandler(BaseHandler):
                     import re
                     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
                     text = text.strip()
-                    
+
                     if text and len(text) > 50:  # Must have meaningful content
                         self.logger.info(f"Simple text extraction successful with {encoding}: {file_path}")
                         return text
                 except (UnicodeDecodeError, Exception):
                     continue
-            
+
             raise ValueError("Could not decode file with any known encoding")
-            
+
         except Exception as e:
             self.logger.error(f"All extraction methods failed for: {file_path}")
             raise RuntimeError(f"DOCX file processing failed: {file_path}. "
                              f"File is not a valid DOCX, DOC, RTF, or text file.")
-    
+
     def _extract_docx_enhanced(
         self,
         current_file: "CurrentFile",
@@ -200,7 +205,7 @@ class DOCXHandler(BaseHandler):
     ) -> str:
         """
         Enhanced DOCX processing.
-        
+
         - Document order preservation (body element traversal)
         - Metadata extraction
         - Inline image extraction and local saving
@@ -213,8 +218,13 @@ class DOCXHandler(BaseHandler):
         self.logger.info(f"Enhanced DOCX processing: {file_path}")
 
         try:
-            # Use file_converter to convert binary to Document
+            # Step 1: Use file_converter to convert binary to Document
             doc = self.file_converter.convert(file_data)
+
+            # Step 2: Preprocess - may transform doc in the future
+            preprocessed = self.preprocess(doc)
+            doc = preprocessed.clean_content  # TRUE SOURCE
+
             result_parts = []
             processed_images: Set[str] = set()
             current_page = 1
@@ -226,7 +236,7 @@ class DOCXHandler(BaseHandler):
             file_stream = self.get_file_stream(current_file)
             chart_data_list = self.chart_extractor.extract_all_from_file(file_stream)
             chart_idx = [0]  # Mutable container for closure
-            
+
             def get_next_chart() -> str:
                 """Callback to get the next pre-extracted chart content."""
                 if chart_idx[0] < len(chart_data_list):
@@ -288,14 +298,14 @@ class DOCXHandler(BaseHandler):
             self.logger.error(f"Error in enhanced DOCX processing: {e}")
             self.logger.debug(traceback.format_exc())
             return self._extract_docx_simple_text(current_file)
-    
+
     def _format_chart_data(self, chart_data) -> str:
         """Format ChartData using ChartProcessor."""
         from contextifier.core.functions.chart_extractor import ChartData
-        
+
         if not isinstance(chart_data, ChartData):
             return ""
-        
+
         if chart_data.has_data():
             return self.chart_processor.format_chart_data(
                 chart_type=chart_data.chart_type,
@@ -308,7 +318,7 @@ class DOCXHandler(BaseHandler):
                 chart_type=chart_data.chart_type,
                 title=chart_data.title
             )
-    
+
     def _extract_docx_simple_text(self, current_file: "CurrentFile") -> str:
         """Simple text extraction (fallback)."""
         try:
