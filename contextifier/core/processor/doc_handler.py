@@ -23,6 +23,8 @@ from contextifier.core.processor.base_handler import BaseHandler
 from contextifier.core.functions.img_processor import ImageProcessor
 from contextifier.core.functions.chart_extractor import BaseChartExtractor, NullChartExtractor
 from contextifier.core.processor.doc_helpers.doc_image_processor import DOCImageProcessor
+from contextifier.core.processor.ole_helper import OLETableExtractor
+from contextifier.core.processor.doc_helpers.doc_file_converter import DocFormat
 
 if TYPE_CHECKING:
     from contextifier.core.document_processor import CurrentFile
@@ -30,13 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("document-processor")
 
 
-class DocFormat(Enum):
-    """DOC 파일의 실제 형식"""
-    RTF = "rtf"
-    OLE = "ole"
-    HTML = "html"
-    DOCX = "docx"
-    UNKNOWN = "unknown"
+# DocFormat is imported from doc_file_converter to ensure type consistency
 
 
 MAGIC_NUMBERS = {
@@ -469,7 +465,11 @@ class DOCHandler(BaseHandler):
             return f"[DOC file processing failed: {str(e)}]"
 
     def _extract_ole_text(self, ole: olefile.OleFileIO) -> str:
-        """Extract text from OLE WordDocument stream."""
+        """Extract text from OLE WordDocument stream with table recognition.
+        
+        Uses OLETableExtractor (implements BaseTableExtractor interface) to detect 
+        and extract tables as HTML, while preserving non-table content as plain text.
+        """
         try:
             # Check WordDocument stream
             if not ole.exists('WordDocument'):
@@ -490,23 +490,16 @@ class DOCHandler(BaseHandler):
                 self.logger.warning(f"Invalid Word magic number: {hex(magic)}")
                 return ""
 
-            # Text extraction attempt
-            text_parts = []
-
-            # 1. Table 스트림에서 텍스트 조각 찾기 시도
-            table_stream_name = None
-            if ole.exists('1Table'):
-                table_stream_name = '1Table'
-            elif ole.exists('0Table'):
-                table_stream_name = '0Table'
-
-            # 2. 간단한 방식: 유니코드/ASCII 텍스트 직접 추출
-            # Word 97-2003은 대부분 유니코드 텍스트를 포함
-            extracted_text = self._extract_text_from_word_stream(word_data)
+            # Use OLETableExtractor for content extraction with table recognition
+            # OLETableExtractor implements BaseTableExtractor interface from table_extractor.py
+            extractor = OLETableExtractor()
+            extracted_text = extractor.extract_content_with_tables(word_data)
+            
             if extracted_text:
-                text_parts.append(extracted_text)
-
-            return '\n'.join(text_parts)
+                return extracted_text
+            
+            # Fallback to basic text extraction if table extractor returns empty
+            return self._extract_text_from_word_stream(word_data)
 
         except Exception as e:
             self.logger.warning(f"Error extracting OLE text: {e}")

@@ -41,11 +41,20 @@ from contextifier.core.processor.rtf_helper.rtf_metadata_extractor import (
     RTFSourceInfo,
 )
 
-# Table extraction
+# Table extraction (Extractor pattern)
 from contextifier.core.processor.rtf_helper.rtf_table_extractor import (
     RTFCellInfo,
     RTFTable,
+    RTFTableExtractor,
+    RTFTableExtractorConfig,
     extract_tables_with_positions,
+)
+
+# Table processing (Processor pattern)
+from contextifier.core.processor.rtf_helper.rtf_table_processor import (
+    RTFTableProcessor,
+    rtf_table_to_html,
+    rtf_table_to_text,
 )
 
 # Content extraction
@@ -97,10 +106,16 @@ __all__ = [
     # Metadata
     'RTFMetadataExtractor',
     'RTFSourceInfo',
-    # Table
+    # Table Extractor
     'RTFCellInfo',
     'RTFTable',
+    'RTFTableExtractor',
+    'RTFTableExtractorConfig',
     'extract_tables_with_positions',
+    # Table Processor
+    'RTFTableProcessor',
+    'rtf_table_to_html',
+    'rtf_table_to_text',
     # Content
     'extract_inline_content',
     'extract_text_only',

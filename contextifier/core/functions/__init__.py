@@ -54,6 +54,33 @@ from contextifier.core.functions.metadata_extractor import (
     format_metadata,
 )
 
+# Table extractor module (abstract interface)
+from contextifier.core.functions.table_extractor import (
+    TableCell,
+    TableData,
+    TableRegion,
+    TableExtractorConfig,
+    BaseTableExtractor,
+    NullTableExtractor,
+)
+
+# Table processor module (formatting)
+from contextifier.core.functions.table_processor import (
+    TableOutputFormat,
+    TableProcessorConfig,
+    TableProcessor,
+    create_table_processor,
+    DEFAULT_PROCESSOR_CONFIG,
+)
+
+# Encoding module (abstract interface only)
+from contextifier.core.functions.encoding import (
+    EncodingConfig,
+    BaseEncoder,
+    ENCODING_CANDIDATES,
+    DEFAULT_ENCODING_CONFIG,
+)
+
 __all__ = [
     # Text utilities
     "clean_text",
@@ -81,4 +108,22 @@ __all__ = [
     "MetadataFormatter",
     "BaseMetadataExtractor",
     "format_metadata",
+    # Table extractor (abstract interface)
+    "TableCell",
+    "TableData",
+    "TableRegion",
+    "TableExtractorConfig",
+    "BaseTableExtractor",
+    "NullTableExtractor",
+    # Table processor (formatting)
+    "TableOutputFormat",
+    "TableProcessorConfig",
+    "TableProcessor",
+    "create_table_processor",
+    "DEFAULT_PROCESSOR_CONFIG",
+    # Encoding (abstract interface)
+    "EncodingConfig",
+    "BaseEncoder",
+    "ENCODING_CANDIDATES",
+    "DEFAULT_ENCODING_CONFIG",
 ]

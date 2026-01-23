@@ -9,7 +9,8 @@ Module structure:
 - docx_metadata: Metadata extraction (DOCXMetadataExtractor)
 - docx_chart_extractor: Chart extraction (DOCXChartExtractor)
 - docx_image_processor: Image/drawing processing (DOCXImageProcessor)
-- docx_table: Table HTML conversion (rowspan/colspan support)
+- docx_table_extractor: Table extraction (DOCXTableExtractor - BaseTableExtractor 구현)
+- docx_table_processor: Table processing/formatting (DOCXTableProcessor)
 - docx_paragraph: Paragraph processing and page breaks
 """
 
@@ -36,12 +37,19 @@ from contextifier.core.processor.docx_helper.docx_image_processor import (
     DOCXImageProcessor,
 )
 
-# Table
-from contextifier.core.processor.docx_helper.docx_table import (
+# Table Extractor (BaseTableExtractor 인터페이스 구현)
+from contextifier.core.processor.docx_helper.docx_table_extractor import (
+    DOCXTableExtractor,
+    DOCXTableExtractorConfig,
     TableCellInfo,
-    process_table_element,
     calculate_all_rowspans,
     estimate_column_count,
+)
+
+# Table Processor (테이블 포맷팅)
+from contextifier.core.processor.docx_helper.docx_table_processor import (
+    DOCXTableProcessor,
+    process_table_element,
     extract_cell_text,
     extract_table_as_text,
 )
@@ -65,11 +73,15 @@ __all__ = [
     'DOCXChartExtractor',
     # Image Processor
     'DOCXImageProcessor',
-    # Table
+    # Table Extractor (BaseTableExtractor implementation)
+    'DOCXTableExtractor',
+    'DOCXTableExtractorConfig',
     'TableCellInfo',
-    'process_table_element',
     'calculate_all_rowspans',
     'estimate_column_count',
+    # Table Processor
+    'DOCXTableProcessor',
+    'process_table_element',
     'extract_cell_text',
     'extract_table_as_text',
     # Paragraph

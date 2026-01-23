@@ -26,6 +26,7 @@ from contextifier.core.processor.rtf_helper import (
     RTFMetadataExtractor,
     RTFSourceInfo,
     RTFPreprocessor,
+    RTFTableProcessor,
     extract_tables_with_positions,
     extract_inline_content,
     extract_text_only,
@@ -190,6 +191,9 @@ class RTFHandler(BaseHandler):
         # Step 3: Extract tables with positions
         tables, table_regions = extract_tables_with_positions(content, encoding)
 
+        # Create table processor for formatting
+        table_processor = RTFTableProcessor()
+
         # Step 4: Extract inline content (preserves table positions)
         inline_content = extract_inline_content(content, table_regions, encoding)
 
@@ -204,10 +208,10 @@ class RTFHandler(BaseHandler):
             for table in tables:
                 if not table.rows:
                     continue
-                if table.is_real_table():
-                    result_parts.append("\n" + table.to_html() + "\n")
-                else:
-                    result_parts.append("\n" + table.to_text_list() + "\n")
+                # Use processor to format table
+                formatted = table_processor.format_rtf_table(table)
+                if formatted:
+                    result_parts.append("\n" + formatted + "\n")
 
         # Step 5: Add image tags
         if converted.image_tags:
