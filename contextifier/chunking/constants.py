@@ -97,10 +97,6 @@ TABLE_SIZE_THRESHOLD_MULTIPLIER = 1.2  # 1.2x of chunk_size
 # Table-based file types (CSV, TSV, Excel)
 TABLE_BASED_FILE_TYPES = {'csv', 'tsv', 'xlsx', 'xls'}
 
-# Table types for unified handling
-TABLE_TYPE_HTML = 'html'
-TABLE_TYPE_MARKDOWN = 'markdown'
-
 
 # ============================================================================
 # Dataclasses

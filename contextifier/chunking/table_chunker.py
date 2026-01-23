@@ -826,60 +826,7 @@ def is_markdown_table(text: str) -> bool:
     return has_pipe_rows and has_separator
 
 
-def detect_table_type(text: str) -> Optional[str]:
-    """
-    Detect if text contains a table and what type it is.
-
-    Args:
-        text: Text to check
-
-    Returns:
-        'html' for HTML tables, 'markdown' for Markdown tables, None otherwise
-    """
-    text_stripped = text.strip()
-
-    # Check for HTML table
-    if text_stripped.startswith('<table') and '</table>' in text_stripped:
-        return 'html'
-
-    # Check for Markdown table
-    if is_markdown_table(text_stripped):
-        return 'markdown'
-
-    return None
-
-
-def chunk_large_table_unified(
-    table_text: str,
-    chunk_size: int,
-    chunk_overlap: int,
-    context_prefix: str = ""
-) -> List[str]:
-    """
-    Unified function to chunk large tables (HTML or Markdown).
-    Automatically detects table type and uses appropriate chunking.
-
-    NOTE: Table chunking does NOT apply overlap.
-    Data duplication degrades search quality, so overlap is intentionally excluded.
-
-    Args:
-        table_text: Table text (HTML or Markdown)
-        chunk_size: Maximum chunk size
-        chunk_overlap: Not used (kept for compatibility)
-        context_prefix: Context info (metadata, sheet info, etc.) - included in all chunks
-
-    Returns:
-        List of split table chunks
-    """
-    table_type = detect_table_type(table_text)
-
-    if table_type == 'html':
-        return chunk_large_table(table_text, chunk_size, chunk_overlap, context_prefix)
-    elif table_type == 'markdown':
-        return chunk_large_markdown_table(table_text, chunk_size, chunk_overlap, context_prefix)
-    else:
-        # Not a recognized table format - return as is
-        logger.warning("Unrecognized table format, returning original")
-        if context_prefix:
-            return [f"{context_prefix}\n{table_text}"]
-        return [table_text]
+# Note: detect_table_type and chunk_large_table_unified were removed because they
+# were not referenced anywhere in the codebase and duplicated logic handled elsewhere
+# (e.g., via _chunk_table_unified in chunking.py). Keeping a single authoritative
+# implementation reduces the risk of divergent behavior.

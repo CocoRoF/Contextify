@@ -156,7 +156,6 @@ def _get_chart_block_pattern(chart_processor: Optional[Any] = None) -> str:
     if chart_processor is not None:
         try:
             # Build pattern from processor's config
-            import re
             prefix = re.escape(chart_processor.config.tag_prefix)
             suffix = re.escape(chart_processor.config.tag_suffix)
             return f'{prefix}.*?{suffix}'
@@ -180,7 +179,6 @@ def _get_metadata_block_pattern(metadata_formatter: Optional[Any] = None) -> str
     if metadata_formatter is not None:
         try:
             # Build pattern from formatter's config
-            import re
             prefix = re.escape(metadata_formatter.metadata_tag_prefix)
             suffix = re.escape(metadata_formatter.metadata_tag_suffix)
             return f'{prefix}.*?{suffix}'

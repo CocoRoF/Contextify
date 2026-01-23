@@ -164,7 +164,7 @@ def chunk_with_row_protection(
     # Sort by start position
     all_matches.sort(key=lambda x: x[0])
     
-    # Remove overlapping matches (longer match wins)
+    # Remove overlapping matches (first non-overlapping match by position wins)
     filtered_matches = []
     last_end = 0
     for start, end, ttype, content in all_matches:
@@ -192,7 +192,7 @@ def chunk_with_row_protection(
             segments.append(('text', after_text))
 
     # If no tables, use simple row protection
-    if not any(t in seg_type for seg_type, _ in segments for t in ('html_table', 'markdown_table')):
+    if not any(seg_type in ('html_table', 'markdown_table') for seg_type, _ in segments):
         return chunk_with_row_protection_simple(
             text, chunk_size, chunk_overlap, split_with_protected_regions_func
         )

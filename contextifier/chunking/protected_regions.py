@@ -103,13 +103,15 @@ def find_protected_regions(
             page_pattern = page_tag_processor.get_pattern_string(PageTagType.PAGE)
             for match in re.finditer(page_pattern, text, re.IGNORECASE):
                 regions.append((match.start(), match.end(), 'page_tag'))
-            # OCR variants
-            page_pattern_ocr = page_pattern.rstrip(')').rstrip('\\]') + r'\s*\(OCR(?:\+Ref)?\)\]'
-            for match in re.finditer(page_pattern_ocr, text, re.IGNORECASE):
+            # OCR page tag variants (use stable default pattern)
+            for match in re.finditer(PAGE_TAG_OCR_PATTERN, text, re.IGNORECASE):
                 regions.append((match.start(), match.end(), 'page_tag'))
             # Slide tags
             slide_pattern = page_tag_processor.get_pattern_string(PageTagType.SLIDE)
             for match in re.finditer(slide_pattern, text, re.IGNORECASE):
+                regions.append((match.start(), match.end(), 'slide_tag'))
+            # OCR slide tag variants (use stable default pattern)
+            for match in re.finditer(SLIDE_TAG_OCR_PATTERN, text, re.IGNORECASE):
                 regions.append((match.start(), match.end(), 'slide_tag'))
             # Sheet tags
             sheet_pattern = page_tag_processor.get_pattern_string(PageTagType.SHEET)
@@ -614,33 +616,6 @@ def _adjust_for_image_boundary(
     return pos, False
 
 
-def _adjust_for_protected_boundary(
-    pos: int,
-    protected_regions: List[Tuple[int, int]],
-    text_len: int
-) -> Tuple[int, bool]:
-    """
-    Check if position is in the middle of a protected region and adjust to region end if so.
-
-    Args:
-        pos: Current split position
-        protected_regions: Protected region position list [(start, end), ...]
-        text_len: Total text length
-
-    Returns:
-        (adjusted_pos, ends_with_protected): Adjusted position and whether it ends with protected region
-    """
-    for region_start, region_end in protected_regions:
-        # If split position is in the middle of a protected region
-        if region_start < pos < region_end:
-            # Extend to region end
-            return min(region_end, text_len), True
-        # If split position is right after a protected region (including space/newline)
-        if region_end <= pos <= region_end + 5:
-            return pos, True
-    return pos, False
-
-
 def _check_ends_with_no_overlap_region(
     end_pos: int,
     no_overlap_regions: List[Tuple[int, int, str]],
@@ -658,8 +633,8 @@ def _check_ends_with_no_overlap_region(
         True if position ends with a no-overlap region
     """
     for region_start, region_end, _ in no_overlap_regions:
-        # If end_pos is exactly at or just after the region end
-        if region_start <= end_pos <= region_end + tolerance:
+        # If end_pos is exactly at or just after the region end (within tolerance)
+        if region_end <= end_pos <= region_end + tolerance:
             return True
     return False
 

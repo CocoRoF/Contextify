@@ -169,9 +169,16 @@ def chunk_by_pages(
 
     current_chunk_pages = []  # Pages included in current chunk
     current_size = 0
+    pending_overlap = ""  # Overlap content to prepend to next chunk
 
     for page_idx, (page_num, page_content) in enumerate(pages):
         page_size = len(page_content)
+
+        # Apply pending overlap to page content
+        if pending_overlap:
+            page_content = pending_overlap + "\n\n" + page_content
+            page_size = len(page_content)
+            pending_overlap = ""
 
         if not current_chunk_pages:
             # First page
@@ -206,8 +213,8 @@ def chunk_by_pages(
             current_size = 0
 
             if overlap_content:
-                # Overlap is added to next chunk start (handled below)
-                pass
+                # Store overlap to prepend to next chunk's first page
+                pending_overlap = overlap_content
         else:
             # Exceeds 1.5x: finalize current chunk, new page goes to next chunk
             if current_chunk_pages:
