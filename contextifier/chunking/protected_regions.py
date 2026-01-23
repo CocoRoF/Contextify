@@ -418,19 +418,27 @@ def split_with_protected_regions(
                     # Table/block is larger than chunk_size
                     table_content = text[t_start:t_end].strip()
 
-                    # Check type and split efficiently
-                    if block_type == 'html' or table_content.startswith('<table'):
-                        # HTML table - split by rows with NO overlap
-                        from .table_chunker import chunk_large_table
-                        table_chunks = chunk_large_table(table_content, chunk_size, 0, "")
-                        chunks.extend(table_chunks)
-                    elif block_type == 'markdown' or _is_markdown_table(table_content):
-                        # Markdown table - split by rows with NO overlap
-                        from .table_chunker import chunk_large_markdown_table
-                        table_chunks = chunk_large_markdown_table(table_content, chunk_size, 0, "")
-                        chunks.extend(table_chunks)
+                    # CRITICAL: Only split tables when force_chunking=True
+                    # When force_chunking=False, tables are protected and should NOT be split
+                    if force_chunking:
+                        # Check type and split efficiently
+                        if block_type == 'html' or table_content.startswith('<table'):
+                            # HTML table - split by rows with NO overlap
+                            from .table_chunker import chunk_large_table
+                            table_chunks = chunk_large_table(table_content, chunk_size, 0, "")
+                            chunks.extend(table_chunks)
+                        elif block_type == 'markdown' or _is_markdown_table(table_content):
+                            # Markdown table - split by rows with NO overlap
+                            from .table_chunker import chunk_large_markdown_table
+                            table_chunks = chunk_large_markdown_table(table_content, chunk_size, 0, "")
+                            chunks.extend(table_chunks)
+                        else:
+                            # Charts, textboxes, etc. -> single chunk (never split)
+                            if table_content:
+                                chunks.append(table_content)
                     else:
-                        # Charts, textboxes, etc. -> single chunk (never split)
+                        # force_chunking=False: Keep entire block as single chunk
+                        # Tables, charts, textboxes, etc. are protected and never split
                         if table_content:
                             chunks.append(table_content)
 
@@ -525,8 +533,9 @@ def split_with_protected_regions(
                         # Space before table too small -> handle table
                         table_content = text[t_start:t_end].strip()
 
-                        # Split table if larger than chunk_size
-                        if table_size > chunk_size:
+                        # CRITICAL: Only split tables when force_chunking=True
+                        # When force_chunking=False, tables are protected and should NOT be split
+                        if table_size > chunk_size and force_chunking:
                             if block_type == 'html' or table_content.startswith('<table'):
                                 # HTML table - split by rows with NO overlap
                                 from .table_chunker import chunk_large_table
@@ -542,7 +551,7 @@ def split_with_protected_regions(
                                 if table_content:
                                     chunks.append(table_content)
                         else:
-                            # Table or chart as single chunk
+                            # force_chunking=False OR table fits in chunk_size: single chunk
                             if table_content:
                                 chunks.append(table_content)
                         # Tables have NO overlap
