@@ -14,7 +14,11 @@ from contextifier.core.functions.img_processor import ImageProcessor
 
 from contextifier.core.processor.ppt_helper.ppt_constants import ElementType, SlideElement
 from contextifier.core.processor.ppt_helper.ppt_bullet import extract_text_with_bullets
-from contextifier.core.processor.ppt_helper.ppt_table import is_simple_table, extract_simple_table_as_text, convert_table_to_html
+from contextifier.core.processor.ppt_helper.ppt_table_extractor import is_simple_table
+from contextifier.core.processor.ppt_helper.ppt_table_processor import (
+    extract_simple_table_as_text, 
+    convert_table_to_html,
+)
 
 logger = logging.getLogger("document-processor")
 

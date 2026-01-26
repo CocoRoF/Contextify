@@ -31,10 +31,19 @@ if TYPE_CHECKING:
 from contextifier.core.processor.excel_helper import (
     # Textbox
     extract_textboxes_from_xlsx,
-    # Table
+)
+# Import Table Extractor and Processor
+from contextifier.core.processor.excel_helper.excel_table_extractor import (
+    XLSXTableExtractor,
+    XLSTableExtractor,
+    ExcelTableExtractorConfig,
+)
+from contextifier.core.processor.excel_helper.excel_table_processor import (
+    ExcelTableProcessor,
+    ExcelTableProcessorConfig,
+    # Backward compatible functions
     convert_xlsx_sheet_to_table,
     convert_xls_sheet_to_table,
-    # Object Detection
     convert_xlsx_objects_to_tables,
     convert_xls_objects_to_tables,
 )
@@ -68,6 +77,10 @@ class ExcelHandler(BaseHandler):
         super().__init__(*args, **kwargs)
         self._xlsx_metadata_extractor = None
         self._xls_metadata_extractor = None
+        # Table extraction components
+        self._xlsx_table_extractor = None
+        self._xls_table_extractor = None
+        self._table_processor = None
 
     def _create_file_converter(self):
         """Create Excel-specific file converter."""
@@ -100,6 +113,32 @@ class ExcelHandler(BaseHandler):
         """Get XLS-specific metadata extractor."""
         if self._xls_metadata_extractor is None:
             self._xls_metadata_extractor = XLSMetadataExtractor()
+        return self._xls_metadata_extractor
+    
+    # ========================================================================
+    # Table Extractor and Processor Properties
+    # ========================================================================
+    
+    @property
+    def xlsx_table_extractor(self) -> XLSXTableExtractor:
+        """Get XLSX table extractor (lazy initialization)."""
+        if self._xlsx_table_extractor is None:
+            self._xlsx_table_extractor = XLSXTableExtractor()
+        return self._xlsx_table_extractor
+    
+    @property
+    def xls_table_extractor(self) -> XLSTableExtractor:
+        """Get XLS table extractor (lazy initialization)."""
+        if self._xls_table_extractor is None:
+            self._xls_table_extractor = XLSTableExtractor()
+        return self._xls_table_extractor
+    
+    @property
+    def table_processor(self) -> ExcelTableProcessor:
+        """Get table processor (lazy initialization)."""
+        if self._table_processor is None:
+            self._table_processor = ExcelTableProcessor()
+        return self._table_processor
         return self._xls_metadata_extractor
 
     def extract_text(

@@ -1,4 +1,4 @@
-# contextifier/core/processor/ole_helper/ole_table_extractor.py
+g# contextifier/core/processor/ole_helper/ole_table_extractor.py
 """
 OLE Table Extractor - OLE Format-Specific Table Extraction
 

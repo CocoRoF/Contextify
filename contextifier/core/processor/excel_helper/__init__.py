@@ -6,8 +6,10 @@ Handles extraction of elements (textboxes, charts, images, tables, etc.) from XL
 Module Structure:
 - excel_chart_constants: Chart type mapping constants
 - excel_chart_extractor: Chart extraction (ChartExtractor)
-- excel_table_xlsx: XLSX table conversion
-- excel_table_xls: XLS table conversion
+- excel_table_extractor: Table extraction (XLSXTableExtractor, XLSTableExtractor)
+- excel_table_processor: Table formatting (ExcelTableProcessor)
+- excel_table_xlsx: XLSX table conversion (backward compatible)
+- excel_table_xls: XLS table conversion (backward compatible)
 - excel_textbox: Textbox extraction
 - excel_metadata: Metadata extraction
 - excel_image: Image extraction
@@ -35,18 +37,28 @@ from contextifier.core.processor.excel_helper.excel_image_processor import (
     ExcelImageProcessor,
 )
 
-# === Table XLSX ===
-from contextifier.core.processor.excel_helper.excel_table_xlsx import (
+# === Table Extractor (NEW - BaseTableExtractor implementation) ===
+from contextifier.core.processor.excel_helper.excel_table_extractor import (
+    ExcelTableExtractor,
+    XLSXTableExtractor,
+    XLSTableExtractor,
+    ExcelTableExtractorConfig,
+    ExcelTableRegionInfo,
+    # Backward compatibility
     has_merged_cells_xlsx,
+    has_merged_cells_xls,
+)
+
+# === Table Processor (NEW - Table formatting) ===
+from contextifier.core.processor.excel_helper.excel_table_processor import (
+    ExcelTableProcessor,
+    ExcelTableProcessorConfig,
+    # Backward compatibility - XLSX
     convert_xlsx_sheet_to_table,
     convert_xlsx_sheet_to_markdown,
     convert_xlsx_sheet_to_html,
     convert_xlsx_objects_to_tables,
-)
-
-# === Table XLS ===
-from contextifier.core.processor.excel_helper.excel_table_xls import (
-    has_merged_cells_xls,
+    # Backward compatibility - XLS
     convert_xls_sheet_to_table,
     convert_xls_sheet_to_markdown,
     convert_xls_sheet_to_html,
@@ -76,13 +88,22 @@ __all__ = [
     'ExcelChartExtractor',
     # Image Processor
     'ExcelImageProcessor',
-    # Table XLSX
+    # Table Extractor (NEW)
+    'ExcelTableExtractor',
+    'XLSXTableExtractor',
+    'XLSTableExtractor',
+    'ExcelTableExtractorConfig',
+    'ExcelTableRegionInfo',
+    # Table Processor (NEW)
+    'ExcelTableProcessor',
+    'ExcelTableProcessorConfig',
+    # Table XLSX (backward compatible)
     'has_merged_cells_xlsx',
     'convert_xlsx_sheet_to_table',
     'convert_xlsx_sheet_to_markdown',
     'convert_xlsx_sheet_to_html',
     'convert_xlsx_objects_to_tables',
-    # Table XLS
+    # Table XLS (backward compatible)
     'has_merged_cells_xls',
     'convert_xls_sheet_to_table',
     'convert_xls_sheet_to_markdown',

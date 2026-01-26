@@ -13,16 +13,15 @@ from contextifier.core.processor.ppt_helper import (
     ElementType,
     SlideElement,
     extract_text_with_bullets,
-    is_simple_table,
-    extract_simple_table_as_text,
-    convert_table_to_html,
-    extract_table_as_text,
     get_shape_position,
     is_picture_shape,
     process_image_shape,
     process_group_shape,
     extract_slide_notes,
     merge_slide_elements,
+    # Table Extractor/Processor (new)
+    PPTTableExtractor,
+    PPTTableProcessor,
 )
 from contextifier.core.processor.ppt_helper.ppt_chart_extractor import PPTChartExtractor
 from contextifier.core.processor.ppt_helper.ppt_metadata import PPTMetadataExtractor
@@ -37,6 +36,13 @@ logger = logging.getLogger("document-processor")
 
 class PPTHandler(BaseHandler):
     """PPT/PPTX File Processing Handler Class"""
+
+    def __init__(self, *args, **kwargs):
+        """Initialize PPT handler with table extractor and processor."""
+        super().__init__(*args, **kwargs)
+        # Initialize table extractor and processor
+        self._table_extractor = PPTTableExtractor()
+        self._table_processor = PPTTableProcessor()
 
     def _create_file_converter(self):
         """Create PPT-specific file converter."""
@@ -64,6 +70,16 @@ class PPTHandler(BaseHandler):
             tag_suffix=self._image_processor.config.tag_suffix,
             storage_backend=self._image_processor.storage_backend,
         )
+
+    @property
+    def table_extractor(self) -> PPTTableExtractor:
+        """Get the table extractor."""
+        return self._table_extractor
+
+    @property
+    def table_processor(self) -> PPTTableProcessor:
+        """Get the table processor."""
+        return self._table_processor
 
     def extract_text(
         self,
@@ -138,8 +154,11 @@ class PPTHandler(BaseHandler):
                         shape_id = shape.shape_id if hasattr(shape, 'shape_id') else id(shape)
 
                         if shape.has_table:
-                            if is_simple_table(shape.table):
-                                simple_text = extract_simple_table_as_text(shape.table)
+                            # Use new TableExtractor/Processor architecture
+                            table = shape.table
+                            if self._table_extractor.is_simple_table(table):
+                                # Simple table (1xN, Nx1) - treat as text
+                                simple_text = self._table_processor.format_pptx_table(table)
                                 if simple_text:
                                     elements.append(SlideElement(
                                         element_type=ElementType.TEXT,
@@ -148,7 +167,8 @@ class PPTHandler(BaseHandler):
                                         shape_id=shape_id
                                     ))
                             else:
-                                table_html = convert_table_to_html(shape.table)
+                                # Complex table - format as HTML
+                                table_html = self._table_processor.format_pptx_table(table)
                                 if table_html:
                                     total_tables += 1
                                     elements.append(SlideElement(
@@ -269,7 +289,10 @@ class PPTHandler(BaseHandler):
                         if hasattr(shape, "text") and shape.text.strip():
                             slide_texts.append(shape.text.strip())
                         elif hasattr(shape, "table"):
-                            table_text = extract_table_as_text(shape.table)
+                            # Use table processor for text extraction
+                            table_text = self._table_processor.format_table_as_text(
+                                self._table_extractor._extract_table_data(shape.table, slide_idx)
+                            ) if shape.table else ""
                             if table_text:
                                 slide_texts.append(table_text)
                     except:
