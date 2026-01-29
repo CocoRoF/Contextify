@@ -304,8 +304,8 @@ class DOCXHandler(BaseHandler):
                     total_charts += chart_count
 
                 elif local_tag == 'tbl':
-                    # Table processing using new interface
-                    table_data = self.table_extractor.extract_table_from_element(body_elem, doc)
+                    # Table processing using APPROACH 2(extract_table)
+                    table_data = self.table_extractor.extract_table(body_elem, doc)
                     if table_data:
                         table_html = self.table_processor.format_table_as_html(table_data)
                         if table_html:

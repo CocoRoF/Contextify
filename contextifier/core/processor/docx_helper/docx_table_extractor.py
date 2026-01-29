@@ -5,12 +5,43 @@ DOCX Table Extractor
 Extracts tables from DOCX documents using the BaseTableExtractor interface.
 Converts DOCX table elements to TableData objects for further processing.
 
+================================================================================
+EXTRACTION APPROACH: Streaming Processing (요소 단위 실시간 처리) - APPROACH 2
+================================================================================
+
+DOCX uses the Streaming Processing approach because:
+- Tables are explicit <w:tbl> XML elements
+- Tables can be processed one-by-one during document traversal  
+- Preserves natural document order
+- Memory efficient for large documents
+
+External Interface: extract_table(element, context) -> Optional[TableData]
+- Called from docx_handler.py during body element traversal
+- Each <w:tbl> element is passed to extract_table()
+- Returns TableData or None
+- ALL internal processing is encapsulated within this single method
+
+================================================================================
+APPROACH 2 Pure Implementation:
+================================================================================
+Per table_extractor.py structure, APPROACH 2 exposes ONLY extract_table().
+All sub-functions are private and called only from within extract_table().
+
+External (Public):
+    extract_table(element, context) → Optional[TableData]
+
+Internal (Private) - All called from extract_table():
+    _estimate_column_count()    - Grid column count calculation
+    _calculate_column_widths()  - Column width percentages
+    _calculate_all_rowspans()   - vMerge rowspan calculation
+    _extract_cell_text()        - Cell content extraction
+
+================================================================================
 Key Features:
-- 2-Pass extraction (detect_table_regions → extract_table_from_region)
 - Full support for rowspan/colspan (vMerge/gridSpan)
-- Column width calculation
+- Column width calculation  
 - Header row detection
-- Nested table support
+- Nested table support (TODO)
 
 OOXML Table Structure:
 - w:tblGrid: Table grid column definitions
@@ -25,14 +56,12 @@ import traceback
 from typing import Any, Dict, List, Optional, Tuple
 
 from docx import Document
-from docx.document import Document as DocumentClass
 from docx.oxml.ns import qn
 
 from contextifier.core.functions.table_extractor import (
     BaseTableExtractor,
     TableCell,
     TableData,
-    TableRegion,
     TableExtractorConfig,
 )
 from contextifier.core.processor.docx_helper.docx_constants import NAMESPACES
@@ -44,17 +73,30 @@ class DOCXTableExtractor(BaseTableExtractor):
     """
     DOCX-specific table extractor implementation.
     
+    Uses STREAMING PROCESSING approach (APPROACH 2 - 요소 단위 실시간 처리).
+    
     Extracts tables from DOCX documents and converts them to TableData objects.
     Supports complex table structures including merged cells (rowspan/colspan).
     
-    Usage:
-        extractor = DOCXTableExtractor()
-        tables = extractor.extract_tables(doc)
+    ============================================================================
+    External Interface (Public):
+    ============================================================================
+        extract_table(element, context) -> Optional[TableData]
         
-        # Or with 2-pass approach:
-        regions = extractor.detect_table_regions(doc)
-        for region in regions:
-            table_data = extractor.extract_table_from_region(doc, region)
+    This is the ONLY public method for table extraction.
+    All other methods are private and called internally from extract_table().
+    
+    ============================================================================
+    Usage:
+    ============================================================================
+        extractor = DOCXTableExtractor()
+        
+        # Streaming approach (APPROACH 2):
+        for elem in doc.element.body:
+            if elem.tag.endswith('tbl'):
+                table_data = extractor.extract_table(elem, doc)
+                if table_data:
+                    process(table_data)
     """
     
     def __init__(self, config: Optional[TableExtractorConfig] = None):
@@ -76,234 +118,159 @@ class DOCXTableExtractor(BaseTableExtractor):
         """
         return format_type.lower() == 'docx'
     
-    def detect_table_regions(self, content: Any) -> List[TableRegion]:
-        """Detect table regions in a DOCX document.
+    # ==========================================================================
+    # STREAMING PROCESSING - APPROACH 2 (요소 단위 실시간 처리)
+    # ==========================================================================
+    # 
+    # DOCX는 APPROACH 2를 사용하므로 extract_table() 하나만 외부에 노출됨.
+    # 모든 세부 함수는 extract_table() 내부에서만 호출됨.
+    #
+    # ==========================================================================
+    
+    def extract_table(
+        self, 
+        element: Any, 
+        context: Any = None
+    ) -> Optional[TableData]:
+        """Extract a single table from a <w:tbl> XML element.
         
-        Pass 1: Scans the document body for table elements and records their positions.
+        ========================================================================
+        [APPROACH 2 - STREAMING PROCESSING] - Single External Interface
+        ========================================================================
+        
+        This is the ONLY public method for DOCX table extraction.
+        Called from docx_handler.py during document body traversal.
+        
+        All internal processing (column calculation, rowspan detection, 
+        cell extraction) is encapsulated within this method.
         
         Args:
-            content: Document object (python-docx Document) or document body element
+            element: <w:tbl> XML element (lxml Element)
+            context: Document object for additional context (optional)
             
         Returns:
-            List of TableRegion objects with table position information
-        """
-        regions = []
-        
-        try:
-            # Handle both Document object and body element
-            if isinstance(content, DocumentClass):
-                body = content.element.body
-            else:
-                body = content
+            TableData object or None if extraction fails
             
-            # Enumerate body elements to find tables
-            for idx, elem in enumerate(body):
-                local_tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
+        Example:
+            for elem in doc.element.body:
+                if etree.QName(elem).localname == 'tbl':
+                    table_data = extractor.extract_table(elem, doc)
+                    if table_data:
+                        html = processor.format_table_as_html(table_data)
+        """
+        try:
+            # ----------------------------------------------------------------
+            # Step 1: Validate input and get row elements
+            # ----------------------------------------------------------------
+            rows_elem = element.findall('w:tr', NAMESPACES)
+            if not rows_elem:
+                return None
+            
+            num_rows = len(rows_elem)
+            
+            # ----------------------------------------------------------------
+            # Step 2: Calculate column count and widths
+            # ----------------------------------------------------------------
+            num_cols = self._estimate_column_count(element, rows_elem)
+            col_widths = self._calculate_column_widths(element, num_cols)
+            
+            # ----------------------------------------------------------------
+            # Step 3: Calculate all rowspans and cell positions
+            # ----------------------------------------------------------------
+            rowspan_map, cell_grid_col = self._calculate_all_rowspans(
+                element, rows_elem, num_rows
+            )
+            
+            # ----------------------------------------------------------------
+            # Step 4: Build TableCell grid
+            # ----------------------------------------------------------------
+            table_rows: List[List[TableCell]] = []
+            
+            for row_idx, row in enumerate(rows_elem):
+                cells_elem = row.findall('w:tc', NAMESPACES)
+                row_cells: List[TableCell] = []
                 
-                if local_tag == 'tbl':
-                    # Found a table element
-                    rows = elem.findall('w:tr', NAMESPACES)
-                    num_rows = len(rows)
+                for cell_idx, cell in enumerate(cells_elem):
+                    # Get cell properties
+                    tcPr = cell.find('w:tcPr', NAMESPACES)
+                    colspan = 1
+                    is_vmerge_continue = False
                     
-                    # Calculate column count from tblGrid or first row
-                    num_cols = self._estimate_column_count(elem, rows)
+                    if tcPr is not None:
+                        # Get colspan (gridSpan)
+                        gs = tcPr.find('w:gridSpan', NAMESPACES)
+                        if gs is not None:
+                            try:
+                                colspan = int(gs.get(qn('w:val'), 1))
+                            except (ValueError, TypeError):
+                                colspan = 1
+                        
+                        # Check vMerge status
+                        vMerge = tcPr.find('w:vMerge', NAMESPACES)
+                        if vMerge is not None:
+                            val = vMerge.get(qn('w:val'))
+                            if val != 'restart':
+                                is_vmerge_continue = True
                     
-                    region = TableRegion(
-                        start_offset=idx,  # Use element index as position
-                        end_offset=idx + 1,
-                        row_count=num_rows,
-                        col_count=num_cols,
-                        confidence=1.0,  # DOCX tables are explicit
-                        metadata={
-                            'element_index': idx,
-                            'table_element': elem  # Store reference to element
-                        }
+                    # Skip cells that are merged (continue cells)
+                    if is_vmerge_continue:
+                        continue
+                    
+                    # Get grid column position
+                    if cell_idx < len(cell_grid_col[row_idx]):
+                        start_col, end_col = cell_grid_col[row_idx][cell_idx]
+                    else:
+                        start_col = cell_idx
+                    
+                    # Get rowspan from pre-calculated map
+                    rowspan = rowspan_map.get((row_idx, start_col), 1)
+                    
+                    # Extract cell content
+                    content = self._extract_cell_text(cell)
+                    
+                    # Create TableCell
+                    table_cell = TableCell(
+                        content=content,
+                        row_span=rowspan,
+                        col_span=colspan,
+                        is_header=(row_idx == 0 and self.config.include_header_row),
+                        row_index=row_idx,
+                        col_index=start_col,
+                        nested_table=None  # TODO: Handle nested tables if needed
                     )
-                    regions.append(region)
-            
-            self.logger.debug(f"Detected {len(regions)} table regions in DOCX")
-            
-        except Exception as e:
-            self.logger.error(f"Error detecting table regions: {e}")
-            self.logger.debug(traceback.format_exc())
-        
-        return regions
-    
-    def extract_table_from_region(
-        self, 
-        content: Any, 
-        region: TableRegion
-    ) -> Optional[TableData]:
-        """Extract table data from a detected region.
-        
-        Pass 2: Extracts actual table content from the detected region.
-        
-        Args:
-            content: Document object or document body element
-            region: TableRegion containing table position info
-            
-        Returns:
-            TableData object or None if extraction fails
-        """
-        try:
-            # Get table element from region metadata
-            table_elem = region.metadata.get('table_element')
-            
-            if table_elem is None:
-                # Fallback: find element by index
-                if isinstance(content, DocumentClass):
-                    body = content.element.body
-                else:
-                    body = content
+                    row_cells.append(table_cell)
                 
-                elem_idx = region.metadata.get('element_index', region.start_offset)
-                elements = list(body)
-                
-                if elem_idx < len(elements):
-                    table_elem = elements[elem_idx]
-                else:
-                    return None
+                if row_cells:
+                    table_rows.append(row_cells)
             
-            # Handle both Document object and body element for doc reference
-            doc = content if isinstance(content, DocumentClass) else None
+            # ----------------------------------------------------------------
+            # Step 5: Create and return TableData
+            # ----------------------------------------------------------------
+            actual_rows = len(table_rows)
+            actual_cols = num_cols
             
-            return self._extract_table_data(table_elem, doc)
+            table_data = TableData(
+                rows=table_rows,
+                num_rows=actual_rows,
+                num_cols=actual_cols,
+                has_header=self.config.include_header_row and actual_rows > 0,
+                start_offset=0,
+                end_offset=0,
+                source_format='docx',
+                metadata={},
+                col_widths_percent=col_widths
+            )
             
-        except Exception as e:
-            self.logger.error(f"Error extracting table from region: {e}")
-            self.logger.debug(traceback.format_exc())
-            return None
-    
-    def extract_table_from_element(
-        self, 
-        table_elem: Any, 
-        doc: Optional[Document] = None
-    ) -> Optional[TableData]:
-        """Extract table data directly from a table element.
-        
-        Convenience method for direct element processing without 2-pass approach.
-        
-        Args:
-            table_elem: Table XML element
-            doc: Optional Document object for context
+            return table_data
             
-        Returns:
-            TableData object or None if extraction fails
-        """
-        try:
-            return self._extract_table_data(table_elem, doc)
         except Exception as e:
             self.logger.error(f"Error extracting table from element: {e}")
             self.logger.debug(traceback.format_exc())
             return None
     
-    def _extract_table_data(
-        self, 
-        table_elem: Any, 
-        doc: Optional[Document] = None
-    ) -> Optional[TableData]:
-        """Internal method to extract TableData from a table element.
-        
-        Args:
-            table_elem: Table XML element
-            doc: Optional Document object
-            
-        Returns:
-            TableData object
-        """
-        rows_elem = table_elem.findall('w:tr', NAMESPACES)
-        if not rows_elem:
-            return None
-        
-        num_rows = len(rows_elem)
-        
-        # Calculate column count and widths
-        num_cols = self._estimate_column_count(table_elem, rows_elem)
-        col_widths = self._calculate_column_widths(table_elem, num_cols)
-        
-        # Calculate all rowspans and cell positions
-        rowspan_map, cell_grid_col = self._calculate_all_rowspans(
-            table_elem, rows_elem, num_rows
-        )
-        
-        # Build TableCell grid
-        table_rows: List[List[TableCell]] = []
-        
-        for row_idx, row in enumerate(rows_elem):
-            cells_elem = row.findall('w:tc', NAMESPACES)
-            row_cells: List[TableCell] = []
-            
-            for cell_idx, cell in enumerate(cells_elem):
-                # Get cell properties
-                tcPr = cell.find('w:tcPr', NAMESPACES)
-                colspan = 1
-                is_vmerge_continue = False
-                
-                if tcPr is not None:
-                    # Get colspan (gridSpan)
-                    gs = tcPr.find('w:gridSpan', NAMESPACES)
-                    if gs is not None:
-                        try:
-                            colspan = int(gs.get(qn('w:val'), 1))
-                        except (ValueError, TypeError):
-                            colspan = 1
-                    
-                    # Check vMerge status
-                    vMerge = tcPr.find('w:vMerge', NAMESPACES)
-                    if vMerge is not None:
-                        val = vMerge.get(qn('w:val'))
-                        if val != 'restart':
-                            is_vmerge_continue = True
-                
-                # Skip cells that are merged (continue cells)
-                if is_vmerge_continue:
-                    continue
-                
-                # Get grid column position
-                if cell_idx < len(cell_grid_col[row_idx]):
-                    start_col, end_col = cell_grid_col[row_idx][cell_idx]
-                else:
-                    start_col = cell_idx
-                
-                # Get rowspan from pre-calculated map
-                rowspan = rowspan_map.get((row_idx, start_col), 1)
-                
-                # Extract cell content
-                content = self._extract_cell_text(cell)
-                
-                # Create TableCell
-                table_cell = TableCell(
-                    content=content,
-                    row_span=rowspan,
-                    col_span=colspan,
-                    is_header=(row_idx == 0 and self.config.include_header_row),
-                    row_index=row_idx,
-                    col_index=start_col,
-                    nested_table=None  # TODO: Handle nested tables if needed
-                )
-                row_cells.append(table_cell)
-            
-            if row_cells:
-                table_rows.append(row_cells)
-        
-        # Handle special cases (1x1 or single column tables)
-        actual_rows = len(table_rows)
-        actual_cols = num_cols
-        
-        # Create TableData
-        table_data = TableData(
-            rows=table_rows,
-            num_rows=actual_rows,
-            num_cols=actual_cols,
-            has_header=self.config.include_header_row and actual_rows > 0,
-            start_offset=0,
-            end_offset=0,
-            source_format='docx',
-            metadata={},
-            col_widths_percent=col_widths
-        )
-        
-        return table_data
+    # ==========================================================================
+    # Private Helper Methods (Called internally from extract_table)
+    # ==========================================================================
     
     def _estimate_column_count(
         self, 
