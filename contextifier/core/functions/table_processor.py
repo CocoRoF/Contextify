@@ -282,15 +282,8 @@ class TableProcessor:
 
 
 def create_table_processor(config: Optional[TableProcessorConfig] = None) -> TableProcessor:
-    return TableProcessor(config)
-
-
-DEFAULT_PROCESSOR_CONFIG = TableProcessorConfig()
-fig] = None) -> TableProcessor:
-    return TableProcessor(config)
-
-
- a TableProcessor.
+    """
+    Factory function to create a TableProcessor.
     
     Args:
         config: Table processing configuration
