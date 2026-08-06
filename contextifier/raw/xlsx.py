@@ -629,7 +629,9 @@ class XlsxRawDocument(RawDocumentBase):
         entries = self._sheet_entries()
         if isinstance(key, int):
             if not 0 <= key < len(entries):
-                raise IndexError(f"sheet index {key} out of range (0..{len(entries) - 1})")
+                raise IndexError(
+                    f"sheet index {key} out of range (0..{len(entries) - 1})"
+                )
             return entries[key]
         for name, part in entries:
             if name == key:
@@ -647,7 +649,9 @@ class XlsxRawDocument(RawDocumentBase):
             raise ValueError(f"sheet name must be 1..31 chars (got {len(name)})")
         bad = set(name) & _FORBIDDEN_SHEET_CHARS
         if bad:
-            raise ValueError(f"sheet name {name!r} has forbidden characters: {sorted(bad)}")
+            raise ValueError(
+                f"sheet name {name!r} has forbidden characters: {sorted(bad)}"
+            )
         if name in self.sheet_names:
             raise ValueError(f"a sheet named {name!r} already exists")
 

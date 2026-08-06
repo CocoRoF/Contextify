@@ -121,3 +121,17 @@ exclude = [
     "temp/",
     "libs/",
 ]
+
+# ---------------------------------------------------------------------------
+# Ruff — pin the rule set so `ruff check` is deterministic across ruff
+# versions (fresh CI installs drift otherwise). E/F is the default the repo
+# has always satisfied; the formatter (`ruff format`) owns layout, so E501
+# (line length) is ignored here.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]

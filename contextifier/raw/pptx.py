@@ -633,8 +633,7 @@ class PptxRawDocument(RawDocumentBase):
             raise ValueError("presentation has no relationships part")
         slide_rel_type = next(
             (rel["type"] for rel in pres_rels.by_type("/slide")),
-            "http://schemas.openxmlformats.org/officeDocument/2006/"
-            "relationships/slide",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide",
         )
         new_rid = pres_rels.next_id()
         target = posixpath.relpath(new_part, posixpath.dirname(_PRESENTATION))
@@ -644,11 +643,10 @@ class PptxRawDocument(RawDocumentBase):
         if sld_id_lst is None:  # pragma: no cover - malformed package
             raise ValueError("presentation has no p:sldIdLst")
         existing = sld_id_lst.findall(qn("p:sldId"))
-        used_ids = [
-            int(s.get("id")) for s in existing if (s.get("id") or "").isdigit()
-        ]
+        used_ids = [int(s.get("id")) for s in existing if (s.get("id") or "").isdigit()]
         new_el = sld_id_lst.makeelement(
-            qn("p:sldId"), {"id": str(max(used_ids, default=255) + 1), qn("r:id"): new_rid}
+            qn("p:sldId"),
+            {"id": str(max(used_ids, default=255) + 1), qn("r:id"): new_rid},
         )
         pos = index + 1 if at is None else max(0, min(at, len(existing)))
         if pos >= len(existing):

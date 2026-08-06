@@ -71,6 +71,7 @@ def make_part_renamer(package: "OpcPackage") -> Callable[[str], str]:
 
     return rename
 
+
 _CONTENT_TYPES = "[Content_Types].xml"
 
 # Mirrors the pipeline's zip-bomb guard (handlers validate the same cap).
@@ -380,9 +381,7 @@ class OpcPackage:
             if old_rels is None:
                 return new
             new_dir = posixpath.dirname(new)
-            new_root = etree.Element(
-                f"{{{rel_ns}}}Relationships", nsmap={None: rel_ns}
-            )
+            new_root = etree.Element(f"{{{rel_ns}}}Relationships", nsmap={None: rel_ns})
             for rel in old_rels:
                 attrs = {"Id": rel["id"], "Type": rel["type"], "Target": rel["target"]}
                 if rel["mode"] == "External":
@@ -392,7 +391,9 @@ class OpcPackage:
                 else:
                     abs_tgt = old_rels.resolve(old, rel["target"])
                     dest = abs_tgt if _matches(rel["type"], share) else _clone(abs_tgt)
-                    attrs["Target"] = posixpath.relpath(dest, new_dir) if new_dir else dest
+                    attrs["Target"] = (
+                        posixpath.relpath(dest, new_dir) if new_dir else dest
+                    )
                 sub = etree.SubElement(new_root, f"{{{rel_ns}}}Relationship")
                 for k, v in attrs.items():
                     sub.set(k, v)
