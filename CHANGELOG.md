@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.0] — 2026-08-06
+
+### Added — PPTX authoring primitives (shape lifecycle, rich runs, table columns)
+
+- **`RawSlide.add_textbox(text, *, left, top, width, height, color?, size_pt?,
+  bold?, italic?)`** — append a real `p:sp` text box; returns its id.
+- **`RawSlide.delete_shape(id)`** — remove a shape (+ orphan-part sweep).
+- **`RawSlide.duplicate_shape(id, *, left?, top?)`** — deep-copy a shape with a
+  fresh `cNvPr` id, optionally repositioned.
+- **`RawSlide.set_runs(id, para, [{text, bold?, italic?, color?, size_pt?}…])`**
+  — replace a paragraph with independently-styled runs (bold one word).
+- **`RawTable.insert_column(idx)` / `delete_column(idx)`** — grid + per-row `a:tc`
+  surgery (was out of scope in v0.4).
+- **`RawTable.merge_cells(r1, c1, r2, c2)`** — gridSpan/rowSpan + hMerge/vMerge.
+- **`RawSlide.paragraphs_by_shape()`** — all text paragraphs in one walk (avoids
+  an O(shapes²) outline build).
+
+### Fixed
+
+- `ChartModel.set_data` refuses **bubble charts** (`RawUnsupportedError`) instead
+  of silently corrupting the stale `c:bubbleSize` cache.
+- `RawSlide.set_text` materializes `a:p` on an empty text placeholder (was
+  raising for a `para 0` the outline advertised).
+
 ## [0.6.1] — 2026-08-06
 
 ### Fixed — PPTX styling edge cases (from an adversarial review)

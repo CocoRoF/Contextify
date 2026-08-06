@@ -134,17 +134,28 @@ _RPR_FILL_PREDECESSORS = (qn("a:ln"),)
 
 #: a:spPr child order (subset): the fill group sits after geometry, before ln.
 _SPPR_FILL_PREDECESSORS = (
-    qn("a:xfrm"), qn("a:custGeom"), qn("a:prstGeom"),
+    qn("a:xfrm"),
+    qn("a:custGeom"),
+    qn("a:prstGeom"),
 )
 
 #: a:tcPr child order: the fill group sits AFTER the border lines + cell3D.
 _TCPR_FILL_PREDECESSORS = (
-    qn("a:lnL"), qn("a:lnR"), qn("a:lnT"), qn("a:lnB"),
-    qn("a:lnTlToBr"), qn("a:lnBlToTr"), qn("a:cell3D"),
+    qn("a:lnL"),
+    qn("a:lnR"),
+    qn("a:lnT"),
+    qn("a:lnB"),
+    qn("a:lnTlToBr"),
+    qn("a:lnBlToTr"),
+    qn("a:cell3D"),
 )
 _FILL_TAGS = (
-    qn("a:noFill"), qn("a:solidFill"), qn("a:gradFill"),
-    qn("a:blipFill"), qn("a:pattFill"), qn("a:grpFill"),
+    qn("a:noFill"),
+    qn("a:solidFill"),
+    qn("a:gradFill"),
+    qn("a:blipFill"),
+    qn("a:pattFill"),
+    qn("a:grpFill"),
 )
 
 
@@ -183,7 +194,12 @@ def _set_fill(prop_el: "_Element", color: str, predecessors: tuple) -> None:
 
 
 def _apply_run_props(
-    rpr: "_Element", *, color, size_pt, bold, italic,
+    rpr: "_Element",
+    *,
+    color,
+    size_pt,
+    bold,
+    italic,
 ) -> None:
     if size_pt is not None:
         rpr.set("sz", str(int(round(size_pt * 100))))
@@ -416,6 +432,104 @@ class RawTable:
         self._tbl.remove(rows[idx])
         self._slide._mark_dirty()
 
+    # -- columns ----------------------------------------------------------------
+
+    @property
+    def _grid_cols(self) -> list["_Element"]:
+        grid = self._tbl.find(qn("a:tblGrid"))
+        return grid.findall(qn("a:gridCol")) if grid is not None else []
+
+    def insert_column(self, idx: int) -> None:
+        """Insert an empty column at *idx*, cloning the column to its left (or
+        the first) as the width/style template — one ``a:gridCol`` plus one
+        ``a:tc`` in every row."""
+        from lxml import etree
+
+        cols = self._grid_cols
+        n = len(cols)
+        if not 0 <= idx <= n:
+            raise IndexError(f"insert index {idx} out of range (0..{n})")
+        grid = self._tbl.find(qn("a:tblGrid"))
+        template_col = cols[idx - 1] if idx > 0 else (cols[0] if cols else None)
+        new_col = (
+            copy.deepcopy(template_col)
+            if template_col is not None
+            else etree.Element(qn("a:gridCol"))
+        )
+        if idx == n:
+            (cols[-1].addnext(new_col) if cols else grid.append(new_col))
+        else:
+            cols[idx].addprevious(new_col)
+        for row in self._rows:
+            cells = row.findall(qn("a:tc"))
+            tmpl = cells[idx - 1] if idx > 0 else (cells[0] if cells else None)
+            new_tc = (
+                copy.deepcopy(tmpl) if tmpl is not None else etree.Element(qn("a:tc"))
+            )
+            body = new_tc.find(qn("a:txBody"))
+            if body is not None:
+                for para in body.findall(qn("a:p")):
+                    body.remove(para)
+                etree.SubElement(body, qn("a:p"))
+            # a fresh cell carries no merge span
+            new_tc.attrib.pop("gridSpan", None)
+            new_tc.attrib.pop("hMerge", None)
+            if idx == len(cells):
+                (cells[-1].addnext(new_tc) if cells else row.append(new_tc))
+            else:
+                cells[idx].addprevious(new_tc)
+        self._slide._mark_dirty()
+
+    def delete_column(self, idx: int) -> None:
+        cols = self._grid_cols
+        if not 0 <= idx < len(cols):
+            raise IndexError(f"col {idx} out of range (table has {len(cols)} cols)")
+        cols[idx].getparent().remove(cols[idx])
+        for row in self._rows:
+            cells = row.findall(qn("a:tc"))
+            if idx < len(cells):
+                row.remove(cells[idx])
+        self._slide._mark_dirty()
+
+    def merge_cells(self, r1: int, c1: int, r2: int, c2: int) -> None:
+        """Merge the rectangular block (r1,c1)-(r2,c2) into one cell.
+
+        The top-left cell gets ``gridSpan``/``rowSpan``; covered cells are
+        marked ``hMerge``/``vMerge`` (kept, per the OOXML table model). The
+        top-left cell's text is preserved; covered cells' text is cleared."""
+        rows = self._rows
+        r1, r2 = sorted((r1, r2))
+        c1, c2 = sorted((c1, c2))
+        if not (0 <= r1 and r2 < len(rows)):
+            raise IndexError("merge row range out of range")
+        span_cols, span_rows = c2 - c1 + 1, r2 - r1 + 1
+        if span_cols == 1 and span_rows == 1:
+            return
+        for ri in range(r1, r2 + 1):
+            cells = rows[ri].findall(qn("a:tc"))
+            if c2 >= len(cells):
+                raise IndexError("merge col range out of range")
+            for ci in range(c1, c2 + 1):
+                tc = cells[ci]
+                if ri == r1 and ci == c1:
+                    if span_cols > 1:
+                        tc.set("gridSpan", str(span_cols))
+                    if span_rows > 1:
+                        tc.set("rowSpan", str(span_rows))
+                else:
+                    if ci > c1:
+                        tc.set("hMerge", "1")
+                    if ri > r1:
+                        tc.set("vMerge", "1")
+                    body = tc.find(qn("a:txBody"))  # clear covered cell text
+                    if body is not None:
+                        for para in body.findall(qn("a:p")):
+                            body.remove(para)
+                        from lxml import etree
+
+                        etree.SubElement(body, qn("a:p"))
+        self._slide._mark_dirty()
+
 
 # -- slides --------------------------------------------------------------------
 
@@ -467,10 +581,18 @@ class RawSlide:
             elif el.tag == qn("p:graphicFrame"):
                 kind = _graphic_kind(el) or "other"
             left, top, width, height = _shape_geometry(el)
-            out.append(RawShapeInfo(
-                id=shape_id, name=name, kind=kind, text=text,
-                left=left, top=top, width=width, height=height,
-            ))
+            out.append(
+                RawShapeInfo(
+                    id=shape_id,
+                    name=name,
+                    kind=kind,
+                    text=text,
+                    left=left,
+                    top=top,
+                    width=width,
+                    height=height,
+                )
+            )
         return out
 
     def _find_shape(self, shape_id: int) -> "_Element":
@@ -500,15 +622,38 @@ class RawSlide:
             raise ValueError(f"Shape id={shape_id} has no text body")
         return [_para_text(p) for p in tx.findall(qn("a:p"))]
 
+    def paragraphs_by_shape(self) -> dict[int, list[str]]:
+        """``{shape_id: [para text, …]}`` for every text shape, in ONE walk of
+        the slide — so callers building an outline don't pay an O(shapes²) cost
+        re-finding each shape with :meth:`get_paragraphs`."""
+        out: dict[int, list[str]] = {}
+        for el in _walk_shapes(self._sp_tree):
+            if el.tag != qn("p:sp"):
+                continue
+            tx = el.find(qn("p:txBody"))
+            if tx is None:
+                continue
+            cnvpr = _shape_cnvpr(el)
+            if cnvpr is None or cnvpr.get("id") is None:
+                continue
+            out[int(cnvpr.get("id"))] = [_para_text(p) for p in tx.findall(qn("a:p"))]
+        return out
+
     def set_text(self, shape_id: int, new_text: str, para: int = 0) -> None:
         """Replace paragraph *para*'s text, preserving the first run's
         formatting (``a:rPr``) and any non-text elements (``a:fld``,
         ``a:br``); other plain-text runs in the paragraph are removed."""
+        from lxml import etree
+
         el = self._find_shape(shape_id)
         tx = el.find(qn("p:txBody"))
         if tx is None:
             raise ValueError(f"Shape id={shape_id} has no text body")
         paras = tx.findall(qn("a:p"))
+        if para == 0 and not paras:
+            # An empty text placeholder (txBody with no a:p) is advertised as
+            # para 0 by callers — materialize it rather than reject the edit.
+            paras = [etree.SubElement(tx, qn("a:p"))]
         if not 0 <= para < len(paras):
             raise IndexError(
                 f"paragraph {para} out of range (shape has {len(paras)} paragraphs)"
@@ -652,6 +797,147 @@ class RawSlide:
         off.set("y", off.get("y") or "0")
         ext.set("cx", ext.get("cx") or "0")
         ext.set("cy", ext.get("cy") or "0")
+        self._mark_dirty()
+
+    # -- shape lifecycle (add / delete / duplicate) -------------------------
+
+    def _next_shape_id(self) -> int:
+        used = {
+            int(c.get("id"))
+            for c in self._sp_tree.iter(qn("p:cNvPr"))
+            if c.get("id") and c.get("id").isdigit()
+        }
+        return (max(used) + 1) if used else 2
+
+    def add_textbox(
+        self,
+        text: str,
+        *,
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+        color: str | None = None,
+        size_pt: float | None = None,
+        bold: bool | None = None,
+        italic: bool | None = None,
+    ) -> int:
+        """Append a new text box (a real ``p:sp`` with ``txBox="1"``) at the
+        given EMU rectangle, carrying *text* and optional run formatting. Returns
+        the new shape's id."""
+        from lxml import etree
+
+        sid = self._next_shape_id()
+        sp = etree.SubElement(self._sp_tree, qn("p:sp"))
+        nv = etree.SubElement(sp, qn("p:nvSpPr"))
+        etree.SubElement(nv, qn("p:cNvPr")).attrib.update(
+            {"id": str(sid), "name": f"TextBox {sid}"}
+        )
+        etree.SubElement(nv, qn("p:cNvSpPr")).set("txBox", "1")
+        etree.SubElement(nv, qn("p:nvPr"))
+        sp_pr = etree.SubElement(sp, qn("p:spPr"))
+        xfrm = etree.SubElement(sp_pr, qn("a:xfrm"))
+        etree.SubElement(xfrm, qn("a:off")).attrib.update(
+            {"x": str(int(left)), "y": str(int(top))}
+        )
+        etree.SubElement(xfrm, qn("a:ext")).attrib.update(
+            {"cx": str(int(width)), "cy": str(int(height))}
+        )
+        geom = etree.SubElement(sp_pr, qn("a:prstGeom"))
+        geom.set("prst", "rect")
+        etree.SubElement(geom, qn("a:avLst"))
+        tx = etree.SubElement(sp, qn("p:txBody"))
+        etree.SubElement(tx, qn("a:bodyPr")).set("wrap", "square")
+        etree.SubElement(tx, qn("a:lstStyle"))
+        para = etree.SubElement(tx, qn("a:p"))
+        run = etree.SubElement(para, qn("a:r"))
+        rpr = etree.SubElement(run, qn("a:rPr"))
+        rpr.set("lang", "en-US")
+        _apply_run_props(rpr, color=color, size_pt=size_pt, bold=bold, italic=italic)
+        etree.SubElement(run, qn("a:t")).text = text
+        self._mark_dirty()
+        return sid
+
+    def delete_shape(self, shape_id: int) -> None:
+        """Remove a shape from the slide. Any media/chart parts it solely
+        referenced are swept as orphans on the next ``to_bytes``."""
+        el = self._find_shape(shape_id)
+        el.getparent().remove(el)
+        self._mark_dirty()
+        # let the document sweep now-unreferenced parts (mirrors remove_slide)
+        sweep = getattr(self._doc, "_sweep_orphan_parts", None) or getattr(
+            self._doc, "_sweep_orphans", None
+        )
+        if sweep is not None:
+            try:
+                sweep()
+            except Exception:
+                pass
+
+    def duplicate_shape(
+        self, shape_id: int, *, left: int | None = None, top: int | None = None
+    ) -> int:
+        """Deep-copy a shape (new ``cNvPr`` id); optionally place the copy at an
+        absolute EMU position. Returns the new shape's id.
+
+        Note: a duplicate of a chart/picture shares the original's relationship
+        id, so it references the SAME chart/image part — fine for a visual
+        clone, but editing one chart would affect both."""
+        src = self._find_shape(shape_id)
+        clone = copy.deepcopy(src)
+        sid = self._next_shape_id()
+        cnvpr = _shape_cnvpr(clone)
+        if cnvpr is not None:
+            cnvpr.set("id", str(sid))
+            if cnvpr.get("name"):
+                cnvpr.set("name", f"{cnvpr.get('name')} copy")
+        src.addnext(clone)
+        if left is not None or top is not None:
+            self._mark_dirty()
+            self.set_shape_position(sid, left=left, top=top)
+        else:
+            self._mark_dirty()
+        return sid
+
+    def set_runs(self, shape_id: int, para: int, runs: list[dict]) -> None:
+        """Replace paragraph *para* with a sequence of independently-styled runs.
+
+        Each run: ``{"text": str, "color"?, "size_pt"?, "bold"?, "italic"?}``.
+        Enables mixed formatting in one line ("bold **just** one word"). The
+        paragraph's ``a:pPr`` / ``a:endParaRPr`` are preserved."""
+        from lxml import etree
+
+        el = self._find_shape(shape_id)
+        tx = el.find(qn("p:txBody"))
+        if tx is None:
+            raise ValueError(f"Shape id={shape_id} has no text body")
+        paras = tx.findall(qn("a:p"))
+        if not 0 <= para < len(paras):
+            raise IndexError(
+                f"paragraph {para} out of range (shape has {len(paras)} paragraphs)"
+            )
+        p = paras[para]
+        # drop existing runs/fields/breaks; keep a:pPr + a:endParaRPr
+        for child in list(p):
+            if child.tag in (qn("a:r"), qn("a:br"), qn("a:fld")):
+                p.remove(child)
+        end = p.find(qn("a:endParaRPr"))
+        for spec in runs:
+            run = etree.Element(qn("a:r"))
+            rpr = etree.SubElement(run, qn("a:rPr"))
+            rpr.set("lang", "en-US")
+            _apply_run_props(
+                rpr,
+                color=spec.get("color"),
+                size_pt=spec.get("size_pt"),
+                bold=spec.get("bold"),
+                italic=spec.get("italic"),
+            )
+            etree.SubElement(run, qn("a:t")).text = str(spec.get("text", ""))
+            if end is not None:
+                end.addprevious(run)
+            else:
+                p.append(run)
         self._mark_dirty()
 
     # -- tables / charts / notes ---------------------------------------------------

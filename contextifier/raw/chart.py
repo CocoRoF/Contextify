@@ -500,6 +500,16 @@ class ChartModel:
                 "set_data is not supported for chartEx (cx:) charts in this "
                 "version; classic c: charts only"
             )
+        # Bubble charts carry a third per-point holder (c:bubbleSize) that this
+        # method does not rewrite, and the regenerated workbook has no column
+        # for it — rewriting only xVal/yVal would leave a stale bubbleSize cache
+        # pointing at missing cells (mismatched point counts → repair dialog).
+        # Refuse rather than silently corrupt.
+        if any(_local(plot) == "bubbleChart" for plot in self._plot_elements()):
+            raise RawUnsupportedError(
+                "set_data does not support bubble charts (c:bubbleSize is not "
+                "rewritten); edit the chart's workbook directly instead"
+            )
         cats = list(categories)
         normalized: list[tuple[str | None, list[float | None]]] = []
         for item in series:
