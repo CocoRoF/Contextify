@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import copy
 import posixpath
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterator
 
@@ -622,6 +623,32 @@ class RawSlide:
             raise ValueError(f"Shape id={shape_id} has no text body")
         return [_para_text(p) for p in tx.findall(qn("a:p"))]
 
+    def set_paragraphs(self, shape_id: int, lines: list[str]) -> None:
+        """Replace a text shape's body with one paragraph per line (e.g. to fill
+        a content placeholder with bullet lines). Reuses the first paragraph's
+        formatting for every line; extra paragraphs are added/removed to match."""
+        from lxml import etree
+
+        el = self._find_shape(shape_id)
+        tx = el.find(qn("p:txBody"))
+        if tx is None:
+            raise ValueError(f"Shape id={shape_id} has no text body")
+        lines = list(lines) or [""]
+        paras = tx.findall(qn("a:p"))
+        template = copy.deepcopy(paras[0]) if paras else None
+        for p in paras:
+            tx.remove(p)
+        end = tx.find(qn("a:endParaRPr"))
+        for line in lines:
+            p = (
+                copy.deepcopy(template)
+                if template is not None
+                else etree.Element(qn("a:p"))
+            )
+            _replace_para_text(p, line)
+            (end.addprevious(p) if end is not None else tx.append(p))
+        self._mark_dirty()
+
     def paragraphs_by_shape(self) -> dict[int, list[str]]:
         """``{shape_id: [para text, …]}`` for every text shape, in ONE walk of
         the slide — so callers building an outline don't pay an O(shapes²) cost
@@ -898,6 +925,216 @@ class RawSlide:
         else:
             self._mark_dirty()
         return sid
+
+    def set_paragraph_bullet(
+        self,
+        shape_id: int,
+        para: int,
+        *,
+        style: str = "bullet",
+        char: str | None = None,
+    ) -> None:
+        """Set a paragraph's bullet: ``style`` = ``bullet`` (a:buChar, default
+        "•"), ``number`` (a:buAutoNum arabicPeriod), or ``none`` (a:buNone)."""
+        from lxml import etree
+
+        el = self._find_shape(shape_id)
+        tx = el.find(qn("p:txBody"))
+        if tx is None:
+            raise ValueError(f"Shape id={shape_id} has no text body")
+        paras = tx.findall(qn("a:p"))
+        if not 0 <= para < len(paras):
+            raise IndexError(f"paragraph {para} out of range")
+        p = paras[para]
+        ppr = p.find(qn("a:pPr"))
+        if ppr is None:
+            ppr = etree.Element(qn("a:pPr"))
+            p.insert(0, ppr)
+        for tag in ("a:buChar", "a:buAutoNum", "a:buNone"):
+            for e in ppr.findall(qn(tag)):
+                ppr.remove(e)
+        if style == "none":
+            etree.SubElement(ppr, qn("a:buNone"))
+        elif style == "number":
+            etree.SubElement(ppr, qn("a:buAutoNum")).set("type", "arabicPeriod")
+        else:
+            etree.SubElement(ppr, qn("a:buChar")).set("char", char or "•")
+        self._mark_dirty()
+
+    def set_z_order(self, shape_id: int, *, to_front: bool) -> None:
+        """Move a top-level shape to the front (last in spTree = on top) or the
+        back (first paintable position, after nvGrpSpPr/grpSpPr)."""
+        el = self._find_shape(shape_id)
+        tree = self._sp_tree
+        if el.getparent() is not tree:
+            raise ValueError("z-order only applies to top-level shapes")
+        tree.remove(el)
+        if to_front:
+            tree.append(el)
+        else:
+            lead = tree.find(qn("p:grpSpPr"))
+            (lead.addnext(el) if lead is not None else tree.insert(0, el))
+        self._mark_dirty()
+
+    def set_hyperlink(
+        self,
+        shape_id: int,
+        url: str,
+        *,
+        para: int | None = None,
+        run: int | None = None,
+    ) -> None:
+        """Attach an external hyperlink. With ``para``+``run`` it links a text
+        run (``a:rPr/a:hlinkClick``); otherwise the whole shape
+        (``p:cNvPr/a:hlinkClick``). Adds a relationship to the slide's rels."""
+        from lxml import etree
+
+        el = self._find_shape(shape_id)
+        rels = self._doc.package.rels_for(self.part_name)
+        if rels is None:
+            rels_name = self._doc.package._rels_name_for(self.part_name)
+            self._doc.package.add_part(
+                rels_name,
+                b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                b'<Relationships xmlns="http://schemas.openxmlformats.org/'
+                b'package/2006/relationships"/>',
+            )
+            rels = self._doc.package.rels_for(self.part_name)
+        rid = rels.next_id()
+        rels.add(
+            rid,
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+            url,
+            external=True,
+        )
+
+        def _put_hlink(parent):
+            for e in parent.findall(qn("a:hlinkClick")):
+                parent.remove(e)
+            hl = etree.SubElement(parent, qn("a:hlinkClick"))
+            hl.set(qn("r:id"), rid)
+
+        if para is not None and run is not None:
+            tx = el.find(qn("p:txBody"))
+            paras = tx.findall(qn("a:p")) if tx is not None else []
+            if not 0 <= para < len(paras):
+                raise IndexError("paragraph out of range")
+            runs = paras[para].findall(qn("a:r"))
+            if not 0 <= run < len(runs):
+                raise IndexError("run out of range")
+            r = runs[run]
+            rpr = r.find(qn("a:rPr"))
+            if rpr is None:
+                rpr = etree.Element(qn("a:rPr"))
+                r.insert(0, rpr)
+            _put_hlink(rpr)
+        else:
+            cnvpr = _shape_cnvpr(el)
+            if cnvpr is None:
+                raise ValueError("shape has no cNvPr for a shape-level hyperlink")
+            _put_hlink(cnvpr)
+        self._mark_dirty()
+
+    def set_notes(self, text: str) -> None:
+        """Set this slide's speaker-notes text, creating the notes slide part
+        (and its content-type + rels) if the slide has none yet."""
+        from lxml import etree
+
+        pkg = self._doc.package
+        rels = pkg.rels_for(self.part_name)
+        notes_part = None
+        if rels is not None:
+            nr = rels.by_type("/notesSlide")
+            if nr:
+                notes_part = rels.resolve(self.part_name, nr[0]["target"])
+        if notes_part is None:
+            notes_part = self._create_notes_slide()
+        xp = self._doc.xml_part(notes_part)
+        body_sp = None
+        for sp in xp.root.iter(qn("p:sp")):
+            ph = sp.find("p:nvSpPr/p:nvPr/p:ph", NS)
+            if ph is not None and ph.get("type") == "body":
+                body_sp = sp
+                break
+        if body_sp is None:
+            raise ValueError("notes slide has no body placeholder")
+        tx = body_sp.find(qn("p:txBody"))
+        for p in tx.findall(qn("a:p")):
+            tx.remove(p)
+        for line in text.split("\n") or [""]:
+            p = etree.SubElement(tx, qn("a:p"))
+            etree.SubElement(etree.SubElement(p, qn("a:r")), qn("a:t")).text = line
+        xp.mark_dirty()
+
+    def _create_notes_slide(self) -> str:
+        """Create a minimal notesSlide part wired to this slide + the notes
+        master, and return its part name."""
+        pkg = self._doc.package
+        nums = []
+        for n in pkg.part_names:
+            m = re.match(r"ppt/notesSlides/notesSlide(\d+)\.xml$", n)
+            if m:
+                nums.append(int(m.group(1)))
+        num = (max(nums) + 1) if nums else 1
+        notes_part = f"ppt/notesSlides/notesSlide{num}.xml"
+        P, A = NS["p"], NS["a"]
+        xml = (
+            f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            f'<p:notes xmlns:p="{P}" xmlns:a="{A}" xmlns:r="{NS["r"]}">'
+            f"<p:cSld><p:spTree>"
+            f'<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+            f"<p:grpSpPr/>"
+            f'<p:sp><p:nvSpPr><p:cNvPr id="2" name="Notes Placeholder"/>'
+            f'<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>'
+            f'<p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>'
+            f"<p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>"
+            f"</p:spTree></p:cSld></p:notes>"
+        ).encode("utf-8")
+        pkg.add_part(notes_part, xml)
+        pkg.set_content_type_override(
+            notes_part,
+            "application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml",
+        )
+        rels_name = pkg._rels_name_for(notes_part)
+        pkg.add_part(
+            rels_name,
+            b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            b'<Relationships xmlns="http://schemas.openxmlformats.org/'
+            b'package/2006/relationships"/>',
+        )
+        notes_rels = pkg.rels_for(notes_part)
+        master = next(
+            (
+                n
+                for n in pkg.part_names
+                if re.match(r"ppt/notesMasters/notesMaster\d+\.xml$", n)
+            ),
+            None,
+        )
+        if master is not None:
+            notes_rels.add(
+                notes_rels.next_id(),
+                "http://schemas.openxmlformats.org/officeDocument/2006/"
+                "relationships/notesMaster",
+                posixpath.relpath(master, posixpath.dirname(notes_part)),
+            )
+        srels = pkg.rels_for(self.part_name)
+        if srels is None:
+            srn = pkg._rels_name_for(self.part_name)
+            pkg.add_part(
+                srn,
+                b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                b'<Relationships xmlns="http://schemas.openxmlformats.org/'
+                b'package/2006/relationships"/>',
+            )
+            srels = pkg.rels_for(self.part_name)
+        srels.add(
+            srels.next_id(),
+            "http://schemas.openxmlformats.org/officeDocument/2006/"
+            "relationships/notesSlide",
+            posixpath.relpath(notes_part, posixpath.dirname(self.part_name)),
+        )
+        return notes_part
 
     def set_runs(self, shape_id: int, para: int, runs: list[dict]) -> None:
         """Replace paragraph *para* with a sequence of independently-styled runs.
@@ -1243,3 +1480,200 @@ class PptxRawDocument(RawDocumentBase):
             existing[pos].addprevious(new_el)
         pres.mark_dirty()
         return pos
+
+    # -- native slide insertion (layout-aware) --------------------------------
+
+    @property
+    def layouts(self) -> list[dict]:
+        """The deck's slide layouts, in part-name order::
+
+            [{"index", "part_name", "name", "type",
+              "placeholders": [{"type", "idx"}, ...]}, ...]
+
+        ``type`` is the layout kind (``title``, ``obj``, ``titleOnly``,
+        ``blank``, ...); each placeholder's ``type``/``idx`` is what a new slide
+        must echo to fill it. Use with :meth:`add_slide`."""
+        out: list[dict] = []
+        names = sorted(
+            n
+            for n in self.package.part_names
+            if n.startswith("ppt/slideLayouts/") and n.endswith(".xml")
+        )
+        for i, name in enumerate(names):
+            try:
+                xp = self.xml_part(name)
+            except Exception:
+                continue
+            csld = xp.find("p:cSld")
+            phs = []
+            for sp in xp.root.iter(qn("p:sp")):
+                ph = sp.find("p:nvSpPr/p:nvPr/p:ph", NS)
+                if ph is not None:
+                    phs.append({"type": ph.get("type") or "body", "idx": ph.get("idx")})
+            out.append(
+                {
+                    "index": i,
+                    "part_name": name,
+                    "name": (csld.get("name") if csld is not None else "") or "",
+                    "type": xp.root.get("type"),
+                    "placeholders": phs,
+                }
+            )
+        return out
+
+    def add_slide(self, layout_index: int, *, at: int | None = None) -> "RawSlide":
+        """Insert a NEW native slide that uses layout *layout_index* (an index
+        into :attr:`layouts`), with an empty placeholder for each of the
+        layout's placeholders. The placeholders inherit their geometry/style
+        from the layout — so content the caller writes into them (via
+        :meth:`RawSlide.set_text` / :meth:`set_runs`) FILLS the layout properly.
+
+        Returns the new :class:`RawSlide`. New parts only — every existing part
+        stays byte-identical."""
+        from lxml import etree
+
+        layouts = self.layouts
+        if not 0 <= layout_index < len(layouts):
+            raise IndexError(
+                f"layout index {layout_index} out of range (0..{len(layouts) - 1})"
+            )
+        layout = layouts[layout_index]
+        layout_part = layout["part_name"]
+
+        # 1. new slide part name (next free ppt/slides/slideN.xml)
+        used_nums = []
+        for n in self.package.part_names:
+            m = re.match(r"ppt/slides/slide(\d+)\.xml$", n)
+            if m:
+                used_nums.append(int(m.group(1)))
+        new_num = (max(used_nums) + 1) if used_nums else 1
+        slide_part = f"ppt/slides/slide{new_num}.xml"
+
+        # 2. build the slide XML — a placeholder p:sp per layout placeholder,
+        #    echoing its p:ph type/idx (geometry inherited from the layout).
+        P, A = NS["p"], NS["a"]
+        sld = etree.Element(qn("p:sld"), nsmap={"p": P, "a": A, "r": NS["r"]})
+        csld = etree.SubElement(sld, qn("p:cSld"))
+        sp_tree = etree.SubElement(csld, qn("p:spTree"))
+        nv_grp = etree.SubElement(sp_tree, qn("p:nvGrpSpPr"))
+        etree.SubElement(nv_grp, qn("p:cNvPr")).attrib.update({"id": "1", "name": ""})
+        etree.SubElement(nv_grp, qn("p:cNvGrpSpPr"))
+        etree.SubElement(nv_grp, qn("p:nvPr"))
+        etree.SubElement(sp_tree, qn("p:grpSpPr"))
+        sid = 2
+        for ph in layout["placeholders"]:
+            sp = etree.SubElement(sp_tree, qn("p:sp"))
+            nv = etree.SubElement(sp, qn("p:nvSpPr"))
+            etree.SubElement(nv, qn("p:cNvPr")).attrib.update(
+                {"id": str(sid), "name": f"Placeholder {sid}"}
+            )
+            cnv = etree.SubElement(nv, qn("p:cNvSpPr"))
+            etree.SubElement(cnv, qn("a:spLocks")).set("noGrp", "1")
+            nvpr = etree.SubElement(nv, qn("p:nvPr"))
+            ph_el = etree.SubElement(nvpr, qn("p:ph"))
+            if ph.get("type"):
+                ph_el.set("type", ph["type"])
+            if ph.get("idx"):
+                ph_el.set("idx", ph["idx"])
+            etree.SubElement(sp, qn("p:spPr"))
+            tx = etree.SubElement(sp, qn("p:txBody"))
+            etree.SubElement(tx, qn("a:bodyPr"))
+            etree.SubElement(tx, qn("a:lstStyle"))
+            etree.SubElement(tx, qn("a:p"))
+            sid += 1
+        slide_xml = etree.tostring(
+            sld, xml_declaration=True, encoding="UTF-8", standalone=True
+        )
+
+        # 3. register the part + content-type override
+        self.package.add_part(slide_part, slide_xml)
+        self.package.set_content_type_override(
+            slide_part,
+            "application/vnd.openxmlformats-officedocument.presentationml.slide+xml",
+        )
+
+        # 4. the slide's rels part → /slideLayout rel to the chosen layout
+        rels_name = self.package._rels_name_for(slide_part)
+        empty_rels = (
+            b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>'
+        )
+        self.package.add_part(rels_name, empty_rels)
+        slide_rels = self.package.rels_for(slide_part)
+        layout_target = posixpath.relpath(layout_part, posixpath.dirname(slide_part))
+        slide_rels.add(
+            slide_rels.next_id(),
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout",
+            layout_target,
+        )
+
+        # 5. presentation /slide rel + p:sldId (mirrors duplicate_slide)
+        pres = self.xml_part(_PRESENTATION)
+        pres_rels = self.package.rels_for(_PRESENTATION)
+        slide_rel_type = next(
+            (rel["type"] for rel in pres_rels.by_type("/slide")),
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide",
+        )
+        new_rid = pres_rels.next_id()
+        target = posixpath.relpath(slide_part, posixpath.dirname(_PRESENTATION))
+        pres_rels.add(new_rid, slide_rel_type, target)
+        sld_id_lst = pres.find("p:sldIdLst")
+        existing = sld_id_lst.findall(qn("p:sldId"))
+        used_ids = [int(s.get("id")) for s in existing if (s.get("id") or "").isdigit()]
+        new_el = sld_id_lst.makeelement(
+            qn("p:sldId"),
+            {"id": str(max(used_ids, default=255) + 1), qn("r:id"): new_rid},
+        )
+        pos = len(existing) if at is None else max(0, min(at, len(existing)))
+        if pos >= len(existing):
+            sld_id_lst.append(new_el)
+        else:
+            existing[pos].addprevious(new_el)
+        pres.mark_dirty()
+        return RawSlide(self, slide_part, pos)
+
+    # -- theme (deck-wide color / font) ---------------------------------------
+
+    def _theme_parts(self) -> list[str]:
+        return sorted(
+            n
+            for n in self.package.part_names
+            if re.match(r"ppt/theme/theme\d+\.xml$", n)
+        )
+
+    def set_theme_color(self, name: str, color: str) -> None:
+        """Set a theme color (deck-wide). ``name`` = ``accent1``..``accent6``,
+        ``dk1``/``dk2``, ``lt1``/``lt2``, ``hlink``, ``folHlink``. One edit
+        recolors every shape that references that theme slot."""
+        from lxml import etree
+
+        val = color.lstrip("#").upper()
+        touched = False
+        for part in self._theme_parts():
+            xp = self.xml_part(part)
+            slot = xp.root.find(f"a:themeElements/a:clrScheme/a:{name}", NS)
+            if slot is None:
+                continue
+            for child in list(slot):
+                slot.remove(child)
+            etree.SubElement(slot, qn("a:srgbClr")).set("val", val)
+            xp.mark_dirty()
+            touched = True
+        if not touched:
+            raise ValueError(f"no theme color slot named {name!r}")
+
+    def set_theme_font(self, which: str, typeface: str) -> None:
+        """Swap the major (headings) or minor (body) theme font deck-wide.
+        ``which`` = ``major`` | ``minor``."""
+        tag = "a:majorFont" if which == "major" else "a:minorFont"
+        touched = False
+        for part in self._theme_parts():
+            xp = self.xml_part(part)
+            latin = xp.root.find(f"a:themeElements/a:fontScheme/{tag}/a:latin", NS)
+            if latin is None:
+                continue
+            latin.set("typeface", typeface)
+            xp.mark_dirty()
+            touched = True
+        if not touched:
+            raise ValueError(f"no {which} font in the theme")

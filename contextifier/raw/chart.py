@@ -758,6 +758,59 @@ class ChartModel:
 
     # -- persistence -----------------------------------------------------------
 
+    def set_legend(self, position: str | None) -> None:
+        """Show/hide/position the chart legend. ``position`` = ``r`` | ``l`` |
+        ``t`` | ``b`` | ``tr`` | ``none`` (removes it). Classic charts only."""
+        if self._is_chartex:
+            raise RawUnsupportedError("set_legend is not supported for chartEx charts")
+        chart = self.xml.root.find("c:chart", NS)
+        if chart is None:
+            raise RawUnsupportedError("chart part has no c:chart element")
+        for lg in chart.findall("c:legend", NS):
+            chart.remove(lg)
+        if position and position != "none":
+            legend = etree.Element(qn("c:legend"))
+            etree.SubElement(legend, qn("c:legendPos")).set("val", position)
+            etree.SubElement(legend, qn("c:overlay")).set("val", "0")
+            plot_area = chart.find("c:plotArea", NS)
+            (
+                plot_area.addnext(legend)
+                if plot_area is not None
+                else chart.append(legend)
+            )
+            vis = chart.find("c:plotVisOnly", NS)
+            if vis is None:
+                chart.append(etree.Element(qn("c:plotVisOnly"), {"val": "1"}))
+        self._commit()
+
+    def set_series_color(self, series_index: int, color: str) -> None:
+        """Set the fill color (``RRGGBB``) of series *series_index* (0-based
+        across the chart's plots). Classic charts only."""
+        if self._is_chartex:
+            raise RawUnsupportedError(
+                "set_series_color is not supported for chartEx charts"
+            )
+        sers = [
+            ser for plot in self._plot_elements() for ser in plot.findall("c:ser", NS)
+        ]
+        if not 0 <= series_index < len(sers):
+            raise IndexError(f"series {series_index} out of range (0..{len(sers) - 1})")
+        ser = sers[series_index]
+        # c:spPr sits after c:order/c:tx in a c:ser; drop any existing one.
+        for sp in ser.findall("c:spPr", NS):
+            ser.remove(sp)
+        sp_pr = etree.Element(qn("c:spPr"))
+        fill = etree.SubElement(sp_pr, qn("a:solidFill"))
+        etree.SubElement(fill, qn("a:srgbClr")).set("val", color.lstrip("#").upper())
+        # insert after c:tx (or c:order) — before c:cat/c:val/tail
+        anchor = None
+        for tag in ("c:tx", "c:order", "c:idx"):
+            found = ser.find(tag, NS)
+            if found is not None:
+                anchor = found
+        (anchor.addnext(sp_pr) if anchor is not None else ser.insert(0, sp_pr))
+        self._commit()
+
     def _commit(self) -> None:
         """Mark the facade dirty and serialize into the package part."""
         self.xml.mark_dirty()

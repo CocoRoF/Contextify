@@ -321,6 +321,28 @@ class TestAuthoringPrimitives:
             assert table.cell(0, 0)._tc.get("gridSpan") == "2"
             assert table.cell(0, 1)._tc.get("hMerge") == "1"
 
+    def test_layouts_and_native_add_slide(self):
+        raw = open_raw(build_three_slide_deck())
+        layouts = raw.layouts
+        assert layouts and all("placeholders" in l for l in layouts)
+        n0 = len(raw.slides)
+        # a layout with title+body
+        idx = next(
+            (l["index"] for l in layouts
+             if {"title", "ctrTitle"} & {p["type"] for p in l["placeholders"]}
+             and {"body", "subTitle", "obj"} & {p["type"] for p in l["placeholders"]}),
+            0,
+        )
+        new = raw.add_slide(idx)
+        assert len(raw.slides) == n0 + 1
+        # the new slide has placeholder text shapes to fill
+        text_shapes = [s for s in new.shapes if s.kind == "text"]
+        assert text_shapes
+        new.set_text(text_shapes[0].id, "hello title")
+        prs = Presentation(io.BytesIO(raw.to_bytes()))
+        assert len(prs.slides) == n0 + 1
+        assert prs.slides[-1].slide_layout is not None  # bound to a real layout
+
     def test_set_data_rejects_bubble_chart(self):
         # a chartex/bubble is hard to build here; assert the guard exists by
         # exercising the classic-chart happy path stays fine (regression anchor).
@@ -328,6 +350,40 @@ class TestAuthoringPrimitives:
         charts = [c for sl in raw.slides for c in sl.charts]
         assert charts  # the deck has one classic chart; set_data works on it
         charts[0].set_data(["A", "B"], [("S", [3.0, 4.0])])
+
+
+class TestPhase2Primitives:
+    def test_notes_bullet_hyperlink_zorder(self):
+        raw = open_raw(build_three_slide_deck())
+        slide = raw.slides[0]
+        sid = next(s.id for s in slide.shapes if s.text == "One")
+        slide.set_notes("speaker notes\nline two")
+        slide.set_paragraph_bullet(sid, 0, style="number")
+        slide.set_z_order(sid, to_front=True)
+        prs = Presentation(io.BytesIO(raw.to_bytes()))
+        assert prs.slides[0].notes_slide.notes_text_frame.text.split("\n") == ["speaker notes", "line two"]
+
+    def test_theme_color_and_font(self):
+        raw = open_raw(build_three_slide_deck())
+        raw.set_theme_color("accent1", "123456")
+        raw.set_theme_font("minor", "Arial")
+        import zipfile
+        th = zipfile.ZipFile(io.BytesIO(raw.to_bytes())).read("ppt/theme/theme1.xml").decode()
+        assert "123456" in th and "Arial" in th
+
+    def test_bad_theme_slot_raises(self):
+        raw = open_raw(build_three_slide_deck())
+        with pytest.raises(ValueError):
+            raw.set_theme_color("nope", "FFFFFF")
+
+    def test_chart_legend_and_series_color(self):
+        raw = open_raw(build_three_slide_deck())
+        chart = next(c for sl in raw.slides for c in sl.charts)
+        chart.set_legend("b")
+        chart.set_series_color(0, "FF0000")
+        prs = Presentation(io.BytesIO(raw.to_bytes()))
+        c2 = next(sh.chart for sl in prs.slides for sh in sl.shapes if sh.has_chart)
+        assert c2.has_legend
 
 
 class TestTables:

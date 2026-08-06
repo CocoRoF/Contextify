@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.0] — 2026-08-06
+
+### Added — native slide authoring, notes, links, bullets, z-order, theme, chart depth
+
+- **`PptxRawDocument.layouts`** + **`add_slide(layout_index, *, at=…)`** — insert a
+  NEW native slide from a slide layout, with empty placeholders that inherit the
+  layout's geometry (content the caller writes FILLS the layout). Returns the
+  `RawSlide`. New parts only; existing parts byte-identical.
+- **`RawSlide.set_paragraphs(id, lines)`** — one paragraph per line (fill a
+  content placeholder with bullets).
+- **`RawSlide.set_notes(text)`** — write speaker notes, creating the notesSlide
+  part (+ content-type + rels to the slide and notes master) if absent.
+- **`RawSlide.set_paragraph_bullet` / `set_z_order` / `set_hyperlink`** — bullets
+  (char/number/none), bring-to-front/send-to-back, run- or shape-level links.
+- **`PptxRawDocument.set_theme_color` / `set_theme_font`** — deck-wide theme
+  color (accent1..6, dk/lt, hlink) and major/minor font swap.
+- **`ChartModel.set_legend(position)` / `set_series_color(idx, color)`** — legend
+  show/position and per-series fill.
+
+---
+
 ## [0.7.0] — 2026-08-06
 
 ### Added — PPTX authoring primitives (shape lifecycle, rich runs, table columns)
