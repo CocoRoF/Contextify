@@ -226,6 +226,48 @@ class TestStyleAndGeometry:
         # size preserved
         assert sh.width == 914400 * 3 and sh.height == 914400
 
+    def test_get_paragraphs_stays_aligned_with_a_literal_newline(self):
+        """A literal '\\n' inside a run must not inflate the paragraph count —
+        get_paragraphs returns one entry per a:p (the index set_text uses)."""
+        from lxml import etree
+        from contextifier.raw.xmlpart import qn as _qn
+
+        raw = open_raw(build_three_slide_deck())
+        slide = raw.slides[0]
+        sid = next(s.id for s in slide.shapes if s.text == "One")
+        el = slide._find_shape(sid)
+        tx = el.find(_qn("p:txBody"))
+        # add a second paragraph; make the first run's text contain a newline
+        tx.find(_qn("a:p")).find(_qn("a:r")).find(_qn("a:t")).text = "Hel\nlo"
+        p2 = etree.SubElement(tx, _qn("a:p"))
+        etree.SubElement(etree.SubElement(p2, _qn("a:r")), _qn("a:t")).text = "Two"
+        paras = slide.get_paragraphs(sid)
+        assert paras == ["Hel\nlo", "Two"]  # 2 paragraphs, not 3
+
+    def test_set_cell_style_fill_after_borders(self):
+        """Cell fill must land AFTER border lines in a:tcPr (schema order)."""
+        from lxml import etree
+        from contextifier.raw.xmlpart import qn as _qn
+
+        raw = open_raw(build_deck())
+        slide = next(s for s in raw.slides if s.tables)
+        table = slide.tables[0]
+        tc = table.cell(0, 0)._tc
+        tcpr = tc.find(_qn("a:tcPr"))
+        if tcpr is None:
+            tcpr = etree.SubElement(tc, _qn("a:tcPr"))
+        tcpr.insert(0, etree.Element(_qn("a:lnL")))  # a pre-existing border, first
+        table.cell(0, 0).set_style(fill="00FF00")
+        order = [etree.QName(c).localname for c in tc.find(_qn("a:tcPr"))]
+        assert order.index("lnL") < order.index("solidFill")
+
+    def test_styling_a_graphicframe_is_rejected(self):
+        raw = open_raw(build_deck())
+        slide = next(s for s in raw.slides if s.tables)
+        table_shape_id = slide.tables[0].shape_id
+        with pytest.raises(ValueError, match="cannot be styled"):
+            slide.set_shape_fill(table_shape_id, "FF0000")
+
 
 class TestTables:
     def test_dims_and_cell_read(self):

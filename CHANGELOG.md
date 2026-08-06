@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.1] — 2026-08-06
+
+### Fixed — PPTX styling edge cases (from an adversarial review)
+
+- `RawTableCell.set_style(fill=…)` now inserts the cell fill AFTER the border
+  lines / cell3D in `a:tcPr` (was inserted first → schema-invalid ordering when
+  a cell already had explicit borders).
+- `set_shape_fill` / `set_shape_position` create a missing `p:spPr` in the
+  correct position (after `nvSpPr`, before `txBody`) instead of appending it;
+  `set_shape_fill` now rejects a graphicFrame (table/chart) with a clear error
+  instead of injecting an invalid `p:spPr`.
+- `set_shape_position` handles graphicFrames (edits their `p:xfrm`) and groups
+  (`p:grpSpPr/a:xfrm`), not just `p:sp`.
+
+### Added
+
+- `RawSlide.get_paragraphs(shape_id)` — per-`a:p` text, so a caller addresses
+  paragraphs by the exact index `set_text` mutates even when a run's text holds
+  a literal newline.
+
 ## [0.6.0] — 2026-08-06
 
 ### Added — in-place PPTX shape styling & geometry (raw layer)

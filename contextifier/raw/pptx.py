@@ -136,6 +136,12 @@ _RPR_FILL_PREDECESSORS = (qn("a:ln"),)
 _SPPR_FILL_PREDECESSORS = (
     qn("a:xfrm"), qn("a:custGeom"), qn("a:prstGeom"),
 )
+
+#: a:tcPr child order: the fill group sits AFTER the border lines + cell3D.
+_TCPR_FILL_PREDECESSORS = (
+    qn("a:lnL"), qn("a:lnR"), qn("a:lnT"), qn("a:lnB"),
+    qn("a:lnTlToBr"), qn("a:lnBlToTr"), qn("a:cell3D"),
+)
 _FILL_TAGS = (
     qn("a:noFill"), qn("a:solidFill"), qn("a:gradFill"),
     qn("a:blipFill"), qn("a:pattFill"), qn("a:grpFill"),
@@ -327,8 +333,10 @@ class RawTableCell:
             # a:tcPr holds the cell fill; it must be the LAST child of a:tc.
             tc_pr = self._tc.find(qn("a:tcPr"))
             if tc_pr is None:
+                # a:tcPr must be the LAST child of a:tc (after a:txBody).
                 tc_pr = etree.SubElement(self._tc, qn("a:tcPr"))
-            _set_fill(tc_pr, fill, ())  # fill group is last in tcPr
+            # The fill group sits after the border lines / cell3D in tcPr.
+            _set_fill(tc_pr, fill, _TCPR_FILL_PREDECESSORS)
         self._table._slide._mark_dirty()
 
 
@@ -481,6 +489,17 @@ class RawSlide:
             raise ValueError(f"Shape id={shape_id} has no text body")
         return _body_text(tx)
 
+    def get_paragraphs(self, shape_id: int) -> list[str]:
+        """Per-``a:p`` text of a shape (one entry per paragraph), so callers
+        address paragraphs by the SAME index :meth:`set_text` mutates — even
+        when a run's text contains a literal newline (which would make a
+        ``get_text().split("\\n")`` index diverge from the real ``a:p`` list)."""
+        el = self._find_shape(shape_id)
+        tx = el.find(qn("p:txBody"))
+        if tx is None:
+            raise ValueError(f"Shape id={shape_id} has no text body")
+        return [_para_text(p) for p in tx.findall(qn("a:p"))]
+
     def set_text(self, shape_id: int, new_text: str, para: int = 0) -> None:
         """Replace paragraph *para*'s text, preserving the first run's
         formatting (``a:rPr``) and any non-text elements (``a:fld``,
@@ -546,17 +565,34 @@ class RawSlide:
                 )
         self._mark_dirty()
 
+    def _ensure_sp_pr(self, el: "_Element") -> "_Element":
+        """The shape's ``p:spPr`` (created after ``nvSpPr`` if absent).
+
+        Only ``p:sp`` / ``p:pic`` / ``p:cxnSp`` carry a ``p:spPr``; a
+        ``graphicFrame`` (table/chart) has none, so styling it is rejected."""
+        from lxml import etree
+
+        if el.tag not in (qn("p:sp"), qn("p:pic"), qn("p:cxnSp")):
+            raise ValueError(
+                "shape has no spPr (a table/chart/other frame cannot be "
+                "styled this way)"
+            )
+        sp_pr = el.find(qn("p:spPr"))
+        if sp_pr is None:
+            sp_pr = etree.Element(qn("p:spPr"))
+            nv = next((c for c in el if c.tag in _NV_PR_TAGS), None)
+            if nv is not None:  # spPr follows nvSpPr in CT_Shape
+                nv.addnext(sp_pr)
+            else:
+                el.insert(0, sp_pr)
+        return sp_pr
+
     def set_shape_fill(self, shape_id: int, color: str) -> None:
         """Set a shape's solid fill to ``color`` (``RRGGBB``), in place.
 
         Replaces any existing fill; ``a:xfrm`` / geometry / line stay put.
         """
-        from lxml import etree
-
-        el = self._find_shape(shape_id)
-        sp_pr = el.find(qn("p:spPr"))
-        if sp_pr is None:
-            sp_pr = etree.SubElement(el, qn("p:spPr"))
+        sp_pr = self._ensure_sp_pr(self._find_shape(shape_id))
         _set_fill(sp_pr, color, _SPPR_FILL_PREDECESSORS)
         self._mark_dirty()
 
@@ -578,14 +614,25 @@ class RawSlide:
         from lxml import etree
 
         el = self._find_shape(shape_id)
-        sp_pr = el.find(qn("p:spPr"))
-        if sp_pr is None:
-            sp_pr = etree.Element(qn("p:spPr"))
-            el.insert(len(el), sp_pr)
-        xfrm = sp_pr.find(qn("a:xfrm"))
-        if xfrm is None:
-            xfrm = etree.Element(qn("a:xfrm"))
-            sp_pr.insert(0, xfrm)  # xfrm is the first child of spPr
+        if el.tag == qn("p:graphicFrame"):
+            # graphicFrames (tables/charts) carry p:xfrm directly, and it is
+            # REQUIRED — so it always exists; edit it in place.
+            xfrm = el.find(qn("p:xfrm"))
+            if xfrm is None:
+                xfrm = etree.Element(qn("p:xfrm"))
+                nv = next((c for c in el if c.tag in _NV_PR_TAGS), None)
+                (nv.addnext(xfrm) if nv is not None else el.insert(0, xfrm))
+        else:
+            if el.tag == qn("p:grpSp"):
+                pr = el.find(qn("p:grpSpPr"))
+                if pr is None:
+                    pr = etree.SubElement(el, qn("p:grpSpPr"))
+            else:
+                pr = self._ensure_sp_pr(el)
+            xfrm = pr.find(qn("a:xfrm"))
+            if xfrm is None:
+                xfrm = etree.Element(qn("a:xfrm"))
+                pr.insert(0, xfrm)  # xfrm is the first child of spPr/grpSpPr
         off = xfrm.find(qn("a:off"))
         if off is None:
             off = etree.SubElement(xfrm, qn("a:off"))
