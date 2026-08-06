@@ -70,12 +70,20 @@ _NV_PR_TAGS = frozenset(
 
 @dataclass
 class RawShapeInfo:
-    """Inventory entry for one shape on a slide."""
+    """Inventory entry for one shape on a slide.
+
+    ``left/top/width/height`` are the shape's own transform in EMU, or ``None``
+    when it inherits placement from a placeholder (no explicit ``a:xfrm``).
+    """
 
     id: int
     name: str
     kind: str  # "text" | "picture" | "table" | "chart" | "group" | "diagram" | "other"
     text: str | None
+    left: int | None = None
+    top: int | None = None
+    width: int | None = None
+    height: int | None = None
 
 
 # -- XML helpers ---------------------------------------------------------------
@@ -117,12 +125,111 @@ def _replace_para_text(para: "_Element", new_text: str) -> None:
         end.addprevious(run)
 
 
+#: EMU per inch / point — DrawingML's absolute unit.
+EMU_PER_INCH = 914400
+EMU_PER_POINT = 12700
+
+#: a:rPr child order (subset) so an inserted solidFill lands schema-valid.
+_RPR_FILL_PREDECESSORS = (qn("a:ln"),)
+
+#: a:spPr child order (subset): the fill group sits after geometry, before ln.
+_SPPR_FILL_PREDECESSORS = (
+    qn("a:xfrm"), qn("a:custGeom"), qn("a:prstGeom"),
+)
+_FILL_TAGS = (
+    qn("a:noFill"), qn("a:solidFill"), qn("a:gradFill"),
+    qn("a:blipFill"), qn("a:pattFill"), qn("a:grpFill"),
+)
+
+
+def _norm_hex(color: str) -> str:
+    return color.lstrip("#").upper()
+
+
+def _solid_fill(color: str) -> "_Element":
+    from lxml import etree
+
+    fill = etree.Element(qn("a:solidFill"))
+    etree.SubElement(fill, qn("a:srgbClr")).set("val", _norm_hex(color))
+    return fill
+
+
+def _insert_after_last(
+    parent: "_Element", child: "_Element", predecessors: tuple
+) -> None:
+    """Insert *child* right after the last predecessor present, else at front."""
+    anchor = None
+    for el in parent:
+        if el.tag in predecessors:
+            anchor = el
+    if anchor is not None:
+        anchor.addnext(child)
+    else:
+        parent.insert(0, child)
+
+
+def _set_fill(prop_el: "_Element", color: str, predecessors: tuple) -> None:
+    """Replace *prop_el*'s solid fill (drop any existing fill-group element)."""
+    for el in list(prop_el):
+        if el.tag in _FILL_TAGS:
+            prop_el.remove(el)
+    _insert_after_last(prop_el, _solid_fill(color), predecessors)
+
+
+def _apply_run_props(
+    rpr: "_Element", *, color, size_pt, bold, italic,
+) -> None:
+    if size_pt is not None:
+        rpr.set("sz", str(int(round(size_pt * 100))))
+    if bold is not None:
+        rpr.set("b", "1" if bold else "0")
+    if italic is not None:
+        rpr.set("i", "1" if italic else "0")
+    if color is not None:
+        _set_fill(rpr, color, _RPR_FILL_PREDECESSORS)
+
+
 def _shape_cnvpr(shape_el: "_Element") -> "_Element | None":
     """The shape's own ``p:cNvPr`` (never a nested child's)."""
     for child in shape_el:
         if child.tag in _NV_PR_TAGS:
             return child.find(qn("p:cNvPr"))
     return None
+
+
+def _shape_geometry(
+    shape_el: "_Element",
+) -> tuple[int | None, int | None, int | None, int | None]:
+    """The shape's OWN transform (left, top, width, height) in EMU, or Nones.
+
+    graphicFrames carry ``p:xfrm`` directly; sp/pic/cxnSp keep it under
+    ``spPr/a:xfrm``; groups under ``grpSpPr/a:xfrm``. We read only the shape's
+    own xfrm, never a descendant's.
+    """
+    tag = shape_el.tag
+    xfrm = None
+    if tag == qn("p:graphicFrame"):
+        xfrm = shape_el.find(qn("p:xfrm"))
+    elif tag == qn("p:grpSp"):
+        pr = shape_el.find(qn("p:grpSpPr"))
+        xfrm = pr.find(qn("a:xfrm")) if pr is not None else None
+    else:
+        pr = shape_el.find(qn("p:spPr"))
+        xfrm = pr.find(qn("a:xfrm")) if pr is not None else None
+    if xfrm is None:
+        return (None, None, None, None)
+    off = xfrm.find(qn("a:off"))
+    ext = xfrm.find(qn("a:ext"))
+
+    def _int(el, attr):
+        if el is None or el.get(attr) is None:
+            return None
+        try:
+            return int(el.get(attr))
+        except ValueError:
+            return None
+
+    return (_int(off, "x"), _int(off, "y"), _int(ext, "cx"), _int(ext, "cy"))
 
 
 def _graphic_kind(frame_el: "_Element") -> str | None:
@@ -188,6 +295,40 @@ class RawTableCell:
         if para is None:
             para = etree.SubElement(tx, qn("a:p"))
         _replace_para_text(para, text)
+        self._table._slide._mark_dirty()
+
+    def set_style(
+        self,
+        *,
+        fill: str | None = None,
+        color: str | None = None,
+        size_pt: float | None = None,
+        bold: bool | None = None,
+        italic: bool | None = None,
+    ) -> None:
+        """Restyle the cell: ``fill`` ("RRGGBB") sets the cell background;
+        ``color``/``size_pt``/``bold``/``italic`` restyle its text runs. Only
+        the attributes given change; the cell text is untouched."""
+        from lxml import etree
+
+        if any(v is not None for v in (color, size_pt, bold, italic)):
+            tx = self._tc.find(qn("a:txBody"))
+            if tx is not None:
+                for p in tx.findall(qn("a:p")):
+                    for run in p.findall(qn("a:r")):
+                        rpr = run.find(qn("a:rPr"))
+                        if rpr is None:
+                            rpr = etree.Element(qn("a:rPr"))
+                            run.insert(0, rpr)
+                        _apply_run_props(
+                            rpr, color=color, size_pt=size_pt, bold=bold, italic=italic
+                        )
+        if fill is not None:
+            # a:tcPr holds the cell fill; it must be the LAST child of a:tc.
+            tc_pr = self._tc.find(qn("a:tcPr"))
+            if tc_pr is None:
+                tc_pr = etree.SubElement(self._tc, qn("a:tcPr"))
+            _set_fill(tc_pr, fill, ())  # fill group is last in tcPr
         self._table._slide._mark_dirty()
 
 
@@ -317,7 +458,11 @@ class RawSlide:
                 kind = "group"
             elif el.tag == qn("p:graphicFrame"):
                 kind = _graphic_kind(el) or "other"
-            out.append(RawShapeInfo(id=shape_id, name=name, kind=kind, text=text))
+            left, top, width, height = _shape_geometry(el)
+            out.append(RawShapeInfo(
+                id=shape_id, name=name, kind=kind, text=text,
+                left=left, top=top, width=width, height=height,
+            ))
         return out
 
     def _find_shape(self, shape_id: int) -> "_Element":
@@ -350,6 +495,116 @@ class RawSlide:
                 f"paragraph {para} out of range (shape has {len(paras)} paragraphs)"
             )
         _replace_para_text(paras[para], new_text)
+        self._mark_dirty()
+
+    # -- style / geometry (format-surgical, in place) -----------------------
+
+    def set_shape_font(
+        self,
+        shape_id: int,
+        *,
+        color: str | None = None,
+        size_pt: float | None = None,
+        bold: bool | None = None,
+        italic: bool | None = None,
+        para: int | None = None,
+    ) -> None:
+        """Restyle a text shape's runs in place.
+
+        Sets only the attributes given (``color`` as ``RRGGBB``, ``size_pt`` in
+        points, ``bold``/``italic``). Applied to every run of every paragraph,
+        or of one ``para`` when given. Each paragraph's ``a:endParaRPr`` is kept
+        in sync so an empty trailing line inherits the same look. Runs keep
+        their text and every other property.
+        """
+        from lxml import etree
+
+        el = self._find_shape(shape_id)
+        tx = el.find(qn("p:txBody"))
+        if tx is None:
+            raise ValueError(f"Shape id={shape_id} has no text body")
+        paras = tx.findall(qn("a:p"))
+        if para is not None:
+            if not 0 <= para < len(paras):
+                raise IndexError(
+                    f"paragraph {para} out of range (shape has {len(paras)} paragraphs)"
+                )
+            paras = [paras[para]]
+        for p in paras:
+            for run in p.findall(qn("a:r")):
+                rpr = run.find(qn("a:rPr"))
+                if rpr is None:
+                    rpr = etree.Element(qn("a:rPr"))
+                    run.insert(0, rpr)
+                _apply_run_props(
+                    rpr, color=color, size_pt=size_pt, bold=bold, italic=italic
+                )
+            end = p.find(qn("a:endParaRPr"))
+            if end is not None:
+                _apply_run_props(
+                    end, color=color, size_pt=size_pt, bold=bold, italic=italic
+                )
+        self._mark_dirty()
+
+    def set_shape_fill(self, shape_id: int, color: str) -> None:
+        """Set a shape's solid fill to ``color`` (``RRGGBB``), in place.
+
+        Replaces any existing fill; ``a:xfrm`` / geometry / line stay put.
+        """
+        from lxml import etree
+
+        el = self._find_shape(shape_id)
+        sp_pr = el.find(qn("p:spPr"))
+        if sp_pr is None:
+            sp_pr = etree.SubElement(el, qn("p:spPr"))
+        _set_fill(sp_pr, color, _SPPR_FILL_PREDECESSORS)
+        self._mark_dirty()
+
+    def set_shape_position(
+        self,
+        shape_id: int,
+        *,
+        left: int | None = None,
+        top: int | None = None,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> None:
+        """Move/resize a shape (values in EMU; only the given ones change).
+
+        Writes ``p:spPr/a:xfrm/a:off`` (position) and ``a:ext`` (size),
+        creating the ``a:xfrm`` if the shape inherited its placement from a
+        placeholder. Everything else on the shape is untouched.
+        """
+        from lxml import etree
+
+        el = self._find_shape(shape_id)
+        sp_pr = el.find(qn("p:spPr"))
+        if sp_pr is None:
+            sp_pr = etree.Element(qn("p:spPr"))
+            el.insert(len(el), sp_pr)
+        xfrm = sp_pr.find(qn("a:xfrm"))
+        if xfrm is None:
+            xfrm = etree.Element(qn("a:xfrm"))
+            sp_pr.insert(0, xfrm)  # xfrm is the first child of spPr
+        off = xfrm.find(qn("a:off"))
+        if off is None:
+            off = etree.SubElement(xfrm, qn("a:off"))
+        ext = xfrm.find(qn("a:ext"))
+        if ext is None:
+            ext = etree.SubElement(xfrm, qn("a:ext"))
+        if left is not None:
+            off.set("x", str(int(left)))
+        if top is not None:
+            off.set("y", str(int(top)))
+        if width is not None:
+            ext.set("cx", str(int(width)))
+        if height is not None:
+            ext.set("cy", str(int(height)))
+        # off/ext must carry both coordinates — backfill from current geometry.
+        off.set("x", off.get("x") or "0")
+        off.set("y", off.get("y") or "0")
+        ext.set("cx", ext.get("cx") or "0")
+        ext.set("cy", ext.get("cy") or "0")
         self._mark_dirty()
 
     # -- tables / charts / notes ---------------------------------------------------

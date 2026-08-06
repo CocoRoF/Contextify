@@ -186,6 +186,47 @@ class TestText:
             slide.set_text(title_id, "x", para=5)
 
 
+class TestStyleAndGeometry:
+    def test_shape_geometry_is_read_in_emu(self):
+        raw = open_raw(build_three_slide_deck())
+        info = next(s for s in raw.slides[0].shapes if s.text == "One")
+        # add_textbox(Inches(1), Inches(1), Inches(3), Inches(1))
+        assert (info.left, info.top, info.width, info.height) == (
+            914400, 914400, 914400 * 3, 914400,
+        )
+
+    def test_set_shape_font_restyles_runs_in_place(self):
+        raw = open_raw(build_three_slide_deck())
+        slide = raw.slides[0]
+        sid = next(s.id for s in slide.shapes if s.text == "One")
+        slide.set_shape_font(sid, color="FF0000", size_pt=24, bold=True, italic=True)
+        prs = Presentation(io.BytesIO(raw.to_bytes()))
+        run = prs.slides[0].shapes[0].text_frame.paragraphs[0].runs[0]
+        assert str(run.font.color.rgb) == "FF0000"
+        assert run.font.size == 24 * 12700
+        assert run.font.bold is True and run.font.italic is True
+        assert run.text == "One"  # text untouched
+
+    def test_set_shape_fill(self):
+        raw = open_raw(build_three_slide_deck())
+        slide = raw.slides[0]
+        sid = next(s.id for s in slide.shapes if s.text == "One")
+        slide.set_shape_fill(sid, "00FF00")
+        prs = Presentation(io.BytesIO(raw.to_bytes()))
+        assert str(prs.slides[0].shapes[0].fill.fore_color.rgb) == "00FF00"
+
+    def test_set_shape_position(self):
+        raw = open_raw(build_three_slide_deck())
+        slide = raw.slides[0]
+        sid = next(s.id for s in slide.shapes if s.text == "One")
+        slide.set_shape_position(sid, left=914400 * 2, top=914400 * 3)
+        prs = Presentation(io.BytesIO(raw.to_bytes()))
+        sh = prs.slides[0].shapes[0]
+        assert sh.left == 914400 * 2 and sh.top == 914400 * 3
+        # size preserved
+        assert sh.width == 914400 * 3 and sh.height == 914400
+
+
 class TestTables:
     def test_dims_and_cell_read(self):
         raw = open_raw(build_deck())
