@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.0] — 2026-08-06
+
+### Added — in-place PPTX shape styling & geometry (raw layer)
+
+Surgical, byte-preserving mutators so a slide's shapes, text and table cells
+can be restyled/moved without redrawing the slide (only the touched slide part
+is re-serialized; everything else round-trips byte-identical).
+
+- **`RawShapeInfo.left/top/width/height`** — the shape's own transform in EMU
+  (read from `a:xfrm`; `None` when placement is inherited from a placeholder).
+- **`RawSlide.set_shape_font(shape_id, *, color, size_pt, bold, italic, para)`**
+  — restyle a text shape's runs in place (only the given attributes; runs keep
+  their text; `a:endParaRPr` kept in sync).
+- **`RawSlide.set_shape_fill(shape_id, color)`** — set a shape's solid fill.
+- **`RawSlide.set_shape_position(shape_id, *, left, top, width, height)`** —
+  move/resize via `a:xfrm` (created if the shape inherited its placement).
+- **`RawTableCell.set_style(*, fill, color, size_pt, bold, italic)`** — restyle
+  a table cell's background + text; cell text untouched.
+
 ## [0.5.0] — 2026-08-06
 
 ### Added — structural operations on the raw layer
