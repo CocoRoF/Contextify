@@ -367,3 +367,122 @@ class TestBytePreservation:
                 assert a.read(name) != b.read(name)
             else:
                 assert a.read(name) == b.read(name), f"collateral change in {name}"
+
+
+def _slide_titles(data: bytes) -> list[str]:
+    prs = Presentation(io.BytesIO(data))
+    out = []
+    for s in prs.slides:
+        txt = ""
+        for sh in s.shapes:
+            if sh.has_text_frame and sh.text_frame.text.strip():
+                txt = sh.text_frame.text.strip().split("\n")[0]
+                break
+        out.append(txt)
+    return out
+
+
+class TestMoveSlide:
+    def test_reorder_last_to_front(self):
+        data = build_three_slide_deck()
+        raw = open_raw(data)
+        raw.move_slide(2, 0)
+        out = raw.to_bytes()
+        assert _slide_titles(out) == ["Three", "One", "Two"]
+
+    def test_move_is_pure_presentation_reorder(self):
+        """Only ppt/presentation.xml changes — every slide part byte-identical."""
+        data = build_three_slide_deck()
+        raw = open_raw(data)
+        raw.move_slide(0, 2)
+        out = raw.to_bytes()
+        a = zipfile.ZipFile(io.BytesIO(data))
+        b = zipfile.ZipFile(io.BytesIO(out))
+        changed = [n for n in a.namelist() if a.read(n) != b.read(n)]
+        assert changed == ["ppt/presentation.xml"]
+
+    def test_out_of_range(self):
+        raw = open_raw(build_three_slide_deck())
+        with pytest.raises(IndexError):
+            raw.move_slide(5, 0)
+        with pytest.raises(IndexError):
+            raw.move_slide(0, 9)
+
+    def test_noop_same_position(self):
+        data = build_three_slide_deck()
+        raw = open_raw(data)
+        raw.move_slide(1, 1)
+        assert _slide_titles(raw.to_bytes()) == ["One", "Two", "Three"]
+
+
+class TestDuplicateSlide:
+    def test_duplicate_default_position_after_source(self):
+        data = build_three_slide_deck()
+        raw = open_raw(data)
+        new_index = raw.duplicate_slide(0)
+        out = raw.to_bytes()
+        assert new_index == 1
+        assert _slide_titles(out) == ["One", "One", "Two", "Three"]
+        assert len(Presentation(io.BytesIO(out)).slides._sldIdLst) == 4
+
+    def test_duplicate_at_explicit_position(self):
+        raw = open_raw(build_three_slide_deck())
+        raw.duplicate_slide(2, at=0)
+        assert _slide_titles(raw.to_bytes())[0] == "Three"
+
+    def test_duplicate_adds_parts_leaves_originals_byte_identical(self):
+        """A duplicate ADDS parts; no pre-existing slide/chart part changes
+        except presentation.xml + its rels + [Content_Types].xml."""
+        data = build_three_slide_deck()  # slide 2 owns the only chart + notes
+        raw = open_raw(data)
+        raw.duplicate_slide(1)  # duplicate the chart+notes slide
+        out = raw.to_bytes()
+        a = zipfile.ZipFile(io.BytesIO(data))
+        b = zipfile.ZipFile(io.BytesIO(out))
+        added = sorted(n for n in b.namelist() if n not in a.namelist())
+        changed = sorted(
+            n for n in a.namelist() if n in b.namelist() and a.read(n) != b.read(n)
+        )
+        # the copy's chart + notes must be NEW parts (independence)
+        assert any("chart" in n for n in added), added
+        assert any("notesSlide" in n for n in added), added
+        assert any(n.startswith("ppt/slides/slide") for n in added), added
+        # only the wiring parts change; NO existing slide/chart is mutated
+        assert changed == [
+            "[Content_Types].xml",
+            "ppt/_rels/presentation.xml.rels",
+            "ppt/presentation.xml",
+        ], changed
+
+    def test_duplicated_chart_is_independent(self):
+        """Editing the copy's chart does not touch the original's bytes."""
+        data = build_three_slide_deck()
+        raw = open_raw(data)
+        raw.duplicate_slide(1)
+        out = raw.to_bytes()
+        pkg = zipfile.ZipFile(io.BytesIO(out))
+        charts = sorted(n for n in pkg.namelist() if "charts/chart" in n and n.endswith(".xml"))
+        assert len(charts) == 2  # original + independent copy
+        assert pkg.read(charts[0]) != b"" and pkg.read(charts[1]) != b""
+
+    def test_duplicated_image_is_shared_not_copied(self):
+        """The picture on the source slide is REFERENCED by the copy, not
+        duplicated (read-only asset)."""
+        data = build_deck()  # slide 2 has table + chart + picture
+        raw = open_raw(data)
+        before = [n for n in zipfile.ZipFile(io.BytesIO(data)).namelist() if "media/image" in n]
+        raw.duplicate_slide(1)
+        out = raw.to_bytes()
+        after = [n for n in zipfile.ZipFile(io.BytesIO(out)).namelist() if "media/image" in n]
+        assert len(after) == len(before)  # image shared, not cloned
+
+    def test_duplicate_reopens_in_pptx(self):
+        raw = open_raw(build_deck())
+        raw.duplicate_slide(0)
+        prs = Presentation(io.BytesIO(raw.to_bytes()))
+        assert len(prs.slides._sldIdLst) == 3
+
+    def test_out_of_range(self):
+        raw = open_raw(build_three_slide_deck())
+        with pytest.raises(IndexError):
+            raw.duplicate_slide(9)

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.0] — 2026-08-06
+
+### Added — structural operations on the raw layer
+
+Whole slides and sheets become movable, copyable objects — deterministic,
+keyless, and byte-preserving (untouched parts round-trip byte-identical).
+
+- **`OpcPackage.clone_part_graph(src, *, rename, share_types, stop_types)`**
+  — deep-copies a part and the subtree it references under fresh names,
+  duplicating each part's content-type `Override` and rebuilding its
+  `.rels` with the same ids but retargeted internal targets. A share/stop
+  policy chooses whether a referenced part is copied, shared (referenced),
+  or dropped; diamonds and back-references resolve to a single clone.
+  Helper `make_part_renamer(package)` allocates fresh in-directory names.
+- **`OpcPackage.content_type_override_of(part)`** — the explicit
+  `<Override>` content type (no by-extension `<Default>` fallback).
+- **PPTX** (`raw/pptx.py`): **`duplicate_slide(index, *, at=None)`** (an
+  independent copy — charts + embedded workbooks + notes are cloned,
+  images/layouts/notes-master shared, notes back-reference retargeted) and
+  **`move_slide(index, to)`** (a pure `p:sldIdLst` reorder — only
+  `presentation.xml` changes). `remove_slide` unchanged.
+- **XLSX** (`raw/xlsx.py`): **`add_sheet`**, **`copy_sheet`** (clones the
+  worksheet + drawing/chart/table subtree, shares images), **`move_sheet`**,
+  **`rename_sheet`** (tab only; does not rewrite formula/name references),
+  **`delete_sheet`** (orphan-swept; refuses the last sheet).
+- The delete/orphan-sweep helpers (`_delete_part`, `_referenced_parts`,
+  `_drop_content_type_overrides`, `_sweep_orphans`) moved to
+  `RawDocumentBase` so both formats share one tested implementation.
+
+25 new raw tests (byte-preservation, copy independence, orphan sweep,
+Office reopen); 623 pass.
+
 ## [0.4.0] — 2026-07-07
 
 ### Added — the raw layer (`contextifier.raw`)

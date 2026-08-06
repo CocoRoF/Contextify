@@ -31,11 +31,28 @@ Design decisions:
 from __future__ import annotations
 
 import math
+import posixpath
 import re
 from typing import TYPE_CHECKING, Iterator
 
 from contextifier.raw.base import RawDocumentBase
+from contextifier.raw.opc import make_part_renamer
 from contextifier.raw.xmlpart import XmlPart, qn
+
+#: a schema-minimal worksheet (CT_Worksheet only requires <sheetData>)
+_MINIMAL_WORKSHEET_XML = (
+    b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    b'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    b"<sheetData/></worksheet>"
+)
+_WORKSHEET_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
+)
+_WORKSHEET_REL_TYPE = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
+)
+#: characters Excel forbids in a sheet tab name
+_FORBIDDEN_SHEET_CHARS = set(r":\/?*[]")
 
 if TYPE_CHECKING:  # pragma: no cover
     from lxml.etree import _Element
@@ -505,6 +522,181 @@ class XlsxRawDocument(RawDocumentBase):
         if part_name not in self._sheet_cache:
             self._sheet_cache[part_name] = RawSheet(self, name, part_name)
         return self._sheet_cache[part_name]
+
+    # -- sheet structure (add / copy / move / rename / delete) ------------------
+
+    def add_sheet(self, name: str, *, at: int | None = None) -> RawSheet:
+        """Create an empty worksheet named *name* at tab position *at*
+        (default: last). Wires the four OPC touchpoints — worksheet part,
+        content-type Override, workbook rel, ``<sheet>`` element — leaving
+        everything else byte-identical."""
+        self._validate_new_sheet_name(name)
+        part = self._fresh_worksheet_part()
+        self.package.add_part(part, _MINIMAL_WORKSHEET_XML)
+        self.package.set_content_type_override(part, _WORKSHEET_CONTENT_TYPE)
+        rid = self._add_workbook_rel(part)
+        self._insert_sheet_element(name, rid, at)
+        self._invalidate()
+        return self._sheet(name, part)
+
+    def copy_sheet(
+        self, key: int | str, new_name: str, *, at: int | None = None
+    ) -> RawSheet:
+        """Insert an independent copy of a sheet (by name or index) as
+        *new_name* at tab position *at* (default: after the source).
+
+        The worksheet part and its drawing/chart/table subtree are deep-
+        copied (``clone_part_graph``); images are SHARED, so editing the
+        copy's cells or chart data never touches the original. v1 copies
+        cells + drawings + charts + native tables; it does NOT rewrite
+        formulas or defined names that reference the source tab by name."""
+        self._validate_new_sheet_name(new_name)
+        _, src_part = self._resolve_sheet(key)
+        pos = self._tab_index(src_part) + 1 if at is None else at
+        new_ws, _ = self.package.clone_part_graph(
+            src_part, rename=make_part_renamer(self.package), share_types=("/image",)
+        )
+        rid = self._add_workbook_rel(new_ws)
+        self._insert_sheet_element(new_name, rid, pos)
+        self._invalidate()
+        return self._sheet(new_name, new_ws)
+
+    def move_sheet(self, key: int | str, to: int) -> None:
+        """Move a sheet (by name or index) to tab position *to*. Reorders
+        the ``<sheet>`` element in ``xl/workbook.xml`` only; no part is
+        touched (bookViews/activeTab is left as-is)."""
+        name, _ = self._resolve_sheet(key)
+        sheets = self._sheets_el()
+        els = sheets.findall(qn("s:sheet"))
+        n = len(els)
+        if not 0 <= to < n:
+            raise IndexError(f"destination {to} out of range (0..{n - 1})")
+        idx = next(i for i, s in enumerate(els) if s.get("name") == name)
+        if idx == to:
+            return
+        el = els[idx]
+        sheets.remove(el)
+        remaining = sheets.findall(qn("s:sheet"))
+        if to >= len(remaining):
+            sheets.append(el)
+        else:
+            remaining[to].addprevious(el)
+        self.workbook.mark_dirty()
+        self._invalidate()
+
+    def rename_sheet(self, key: int | str, new_name: str) -> None:
+        """Rename a sheet's tab. v1 sets the ``<sheet name>`` attribute
+        only — it does NOT rewrite formulas / defined names that reference
+        the old name (the edit2docs verb surfaces a warning when any do)."""
+        old_name, _ = self._resolve_sheet(key)
+        if new_name == old_name:
+            return
+        self._validate_new_sheet_name(new_name)
+        for s in self._sheets_el().findall(qn("s:sheet")):
+            if s.get("name") == old_name:
+                s.set("name", new_name)
+                self.workbook.mark_dirty()
+                break
+        self._invalidate()
+
+    def delete_sheet(self, key: int | str) -> None:
+        """Remove a sheet and everything only it anchored (its drawing,
+        charts, embeddings, native tables), reference-counted against the
+        surviving sheets — the same orphan sweep as
+        ``PptxRawDocument.remove_slide``. Refuses to delete the last sheet
+        (a workbook needs at least one)."""
+        if len(self._sheet_entries()) <= 1:
+            raise ValueError("cannot delete the only sheet in a workbook")
+        name, part = self._resolve_sheet(key)
+        sheets = self._sheets_el()
+        rid = None
+        for s in sheets.findall(qn("s:sheet")):
+            if s.get("name") == name:
+                rid = s.get(qn("r:id"))
+                sheets.remove(s)
+                break
+        self.workbook.mark_dirty()
+        rels = self.package.rels_for(self._workbook_name)
+        if rid is not None and rels is not None:
+            rels.remove(rid)
+        self._sweep_orphans([part])
+        self._invalidate()
+
+    # -- sheet-structure internals ---------------------------------------------
+
+    def _resolve_sheet(self, key: int | str) -> tuple[str, str]:
+        """``(name, worksheet part)`` for a sheet by tab index or name."""
+        entries = self._sheet_entries()
+        if isinstance(key, int):
+            if not 0 <= key < len(entries):
+                raise IndexError(f"sheet index {key} out of range (0..{len(entries) - 1})")
+            return entries[key]
+        for name, part in entries:
+            if name == key:
+                return name, part
+        raise KeyError(f"No sheet named {key!r}")
+
+    def _tab_index(self, part_name: str) -> int:
+        for i, (_, part) in enumerate(self._sheet_entries()):
+            if part == part_name:
+                return i
+        return len(self._sheet_entries())
+
+    def _validate_new_sheet_name(self, name: str) -> None:
+        if not name or len(name) > 31:
+            raise ValueError(f"sheet name must be 1..31 chars (got {len(name)})")
+        bad = set(name) & _FORBIDDEN_SHEET_CHARS
+        if bad:
+            raise ValueError(f"sheet name {name!r} has forbidden characters: {sorted(bad)}")
+        if name in self.sheet_names:
+            raise ValueError(f"a sheet named {name!r} already exists")
+
+    def _fresh_worksheet_part(self) -> str:
+        n = 1
+        while self.package.has_part(f"xl/worksheets/sheet{n}.xml"):
+            n += 1
+        return f"xl/worksheets/sheet{n}.xml"
+
+    def _add_workbook_rel(self, worksheet_part: str) -> str:
+        rels = self.package.rels_for(self._workbook_name)
+        if rels is None:
+            raise ValueError("workbook has no relationships part")
+        rid = rels.next_id()
+        rels.add(
+            rid,
+            _WORKSHEET_REL_TYPE,
+            posixpath.relpath(worksheet_part, posixpath.dirname(self._workbook_name)),
+        )
+        return rid
+
+    def _sheets_el(self):
+        sheets = self.workbook.find("s:sheets")
+        if sheets is None:
+            raise ValueError("workbook.xml has no <sheets> element")
+        return sheets
+
+    def _insert_sheet_element(self, name: str, rid: str, at: int | None) -> None:
+        sheets = self._sheets_el()
+        existing = sheets.findall(qn("s:sheet"))
+        ids = [
+            int(s.get("sheetId", "0"))
+            for s in existing
+            if (s.get("sheetId") or "0").isdigit()
+        ]
+        el = sheets.makeelement(qn("s:sheet"), {})
+        el.set("name", name)
+        el.set("sheetId", str(max(ids, default=0) + 1))
+        el.set(qn("r:id"), rid)
+        if at is None or at >= len(existing):
+            sheets.append(el)
+        else:
+            existing[max(0, at)].addprevious(el)
+        self.workbook.mark_dirty()
+
+    def _invalidate(self) -> None:
+        self._sheet_cache.clear()
+        self._shared_cache = None
+        self._formulas_exist = None
 
     # -- workbook-level reads ----------------------------------------------------
 

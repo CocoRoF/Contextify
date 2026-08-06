@@ -24,13 +24,52 @@ from __future__ import annotations
 
 import io
 import posixpath
+import re
 import zipfile
 from pathlib import Path
-from typing import BinaryIO, Iterator
+from typing import BinaryIO, Callable, Iterable, Iterator
 
 from contextifier.errors import ContextifierError
 
-__all__ = ["OpcPackage", "OpcPart", "Relationships", "RawUnsupportedError"]
+__all__ = [
+    "OpcPackage",
+    "OpcPart",
+    "Relationships",
+    "RawUnsupportedError",
+    "make_part_renamer",
+]
+
+_TRAILING_DIGITS = re.compile(r"^(.*?)(\d+)$")
+
+
+def make_part_renamer(package: "OpcPackage") -> Callable[[str], str]:
+    """A fresh-name allocator for cloning parts.
+
+    Given an existing part name it returns an unused one in the SAME
+    directory, keeping the non-numeric stem prefix and bumping the
+    trailing number (``ppt/slides/slide3.xml`` → ``ppt/slides/slide4.xml``
+    if 4 is free, else the next gap). Names it has already handed out are
+    reserved even before they are added to the package, so a single clone
+    of a whole part subtree never collides with itself.
+    """
+    allocated: set[str] = set()
+
+    def rename(old: str) -> str:
+        directory = posixpath.dirname(old)
+        base = posixpath.basename(old)
+        stem, dot, ext = base.partition(".")
+        m = _TRAILING_DIGITS.match(stem)
+        prefix = m.group(1) if m else stem
+        n = int(m.group(2)) + 1 if m else 1
+        while True:
+            cand_base = f"{prefix}{n}{dot}{ext}"
+            cand = posixpath.join(directory, cand_base) if directory else cand_base
+            if not package.has_part(cand) and cand not in allocated:
+                allocated.add(cand)
+                return cand
+            n += 1
+
+    return rename
 
 _CONTENT_TYPES = "[Content_Types].xml"
 
@@ -273,6 +312,100 @@ class OpcPackage:
             ):
                 return el.get("ContentType")
         return None
+
+    def content_type_override_of(self, part_name: str) -> str | None:
+        """The *explicit* ``<Override>`` content type for *part_name*, or
+        None. Unlike :meth:`content_type_of` this does NOT fall back to a
+        by-extension ``<Default>`` — a cloned part only needs its own
+        Override copied (Defaults already cover it by extension)."""
+        from lxml import etree
+
+        root = etree.fromstring(self.get_part(_CONTENT_TYPES).read())
+        ns = "http://schemas.openxmlformats.org/package/2006/content-types"
+        for el in root:
+            if el.tag == f"{{{ns}}}Override" and el.get("PartName") == f"/{part_name}":
+                return el.get("ContentType")
+        return None
+
+    def clone_part_graph(
+        self,
+        src_part: str,
+        *,
+        rename: Callable[[str], str],
+        share_types: Iterable[str] = (),
+        stop_types: Iterable[str] = (),
+    ) -> tuple[str, dict[str, str]]:
+        """Deep-copy *src_part* and the part subtree it references.
+
+        Every part reachable from *src_part* through internal
+        relationships is copied to a fresh name from *rename*, unless its
+        relationship Type ends with one of:
+
+        * a ``share_types`` suffix — the copy REFERENCES the original
+          target (not copied); use for read-only shared assets (images,
+          slide layouts, notes masters).
+        * a ``stop_types`` suffix — the relationship is dropped from the
+          copy entirely.
+
+        Each copied part's ``<Override>`` content type is duplicated, and
+        its ``.rels`` is rebuilt with the SAME relationship ids (so the
+        copied part bodies, which reference those ids, need no rewrite) —
+        only internal targets are retargeted to the clones. A relationship
+        that resolves to a part already cloned in this call reuses that
+        clone (so a notes-slide's back-reference to its slide points at the
+        NEW slide, and diamonds don't double-copy).
+
+        Returns ``(new_src_part_name, {old_part: new_part})``.
+        """
+        from lxml import etree
+
+        share = tuple(share_types)
+        stop = tuple(stop_types)
+        rel_ns = Relationships.NS
+        mapping: dict[str, str] = {}
+
+        def _matches(rtype: str | None, suffixes: tuple[str, ...]) -> bool:
+            return bool(rtype) and any(rtype.endswith(s) for s in suffixes)
+
+        def _clone(old: str) -> str:
+            if old in mapping:
+                return mapping[old]
+            new = rename(old)
+            mapping[old] = new  # reserve BEFORE recursing (breaks cycles)
+            self.add_part(new, self.get_part(old).read())
+            override = self.content_type_override_of(old)
+            if override is not None:
+                self.set_content_type_override(new, override)
+            old_rels = self.rels_for(old)
+            if old_rels is None:
+                return new
+            new_dir = posixpath.dirname(new)
+            new_root = etree.Element(
+                f"{{{rel_ns}}}Relationships", nsmap={None: rel_ns}
+            )
+            for rel in old_rels:
+                attrs = {"Id": rel["id"], "Type": rel["type"], "Target": rel["target"]}
+                if rel["mode"] == "External":
+                    attrs["TargetMode"] = "External"
+                elif _matches(rel["type"], stop):
+                    continue
+                else:
+                    abs_tgt = old_rels.resolve(old, rel["target"])
+                    dest = abs_tgt if _matches(rel["type"], share) else _clone(abs_tgt)
+                    attrs["Target"] = posixpath.relpath(dest, new_dir) if new_dir else dest
+                sub = etree.SubElement(new_root, f"{{{rel_ns}}}Relationship")
+                for k, v in attrs.items():
+                    sub.set(k, v)
+            self.add_part(
+                self._rels_name_for(new),
+                etree.tostring(
+                    new_root, xml_declaration=True, encoding="UTF-8", standalone=True
+                ),
+            )
+            return new
+
+        new_src = _clone(src_part)
+        return new_src, mapping
 
     def set_content_type_override(self, part_name: str, content_type: str) -> None:
         from lxml import etree

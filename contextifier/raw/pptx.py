@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Iterator
 
 from contextifier.raw.base import RawDocumentBase
 from contextifier.raw.chart import ChartModel, find_chart_parts
-from contextifier.raw.opc import OpcPackage
+from contextifier.raw.opc import make_part_renamer
 from contextifier.raw.xmlpart import NS, qn
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -560,94 +560,100 @@ class PptxRawDocument(RawDocumentBase):
                 for rel in slide_rels.by_type("/notesSlide")
             ]
 
-        # Everything transitively reachable from the doomed parts is an
-        # orphan *candidate* — collected before any rels disappear.
-        candidates: set[str] = set()
-        stack, visited = list(doomed), set(doomed)
-        while stack:
-            src = stack.pop()
-            rels = self.package.rels_for(src)
-            if rels is None:
-                continue
-            for rel in rels:
-                if rel["mode"] == "External":
-                    continue
-                target = rels.resolve(src, rel["target"])
-                if target not in visited:
-                    visited.add(target)
-                    candidates.add(target)
-                    stack.append(target)
+        # Delete the doomed parts and sweep every part only they anchored
+        # (charts, embedded workbooks, images, notes) — shared base logic.
+        self._sweep_orphans(doomed)
 
-        removed: list[str] = []
-        for name in doomed:
-            removed += self._delete_part(name)
+    # -- reordering & duplication ---------------------------------------------
 
-        # Sweep candidates no remaining part references, to a fixpoint
-        # (deleting a chart un-anchors its embedded workbook, etc.).
-        while True:
-            referenced = self._referenced_parts()
-            orphans = [
-                c
-                for c in sorted(candidates)
-                if self.package.has_part(c) and c not in referenced
-            ]
-            if not orphans:
-                break
-            for name in orphans:
-                removed += self._delete_part(name)
-                candidates.discard(name)
+    #: relationship Types a duplicated slide REFERENCES (shares) instead of
+    #: copying: read-only or globally-anchored assets. Everything else
+    #: (charts + their embedded workbooks/colors/styles, and the notes
+    #: slide) is cloned, so editing the copy never mutates the original.
+    _SHARE_ON_DUPLICATE = (
+        "/slideLayout",
+        "/notesMaster",
+        "/image",
+        "/audio",
+        "/video",
+        "/tags",
+    )
 
-        self._drop_content_type_overrides(removed)
+    def move_slide(self, index: int, to: int) -> None:
+        """Move the slide at *index* to position *to*.
 
-    # -- internals ------------------------------------------------------------------
+        A pure reorder of ``p:sldIdLst`` in ``ppt/presentation.xml`` — no
+        part is copied, renamed or deleted, so every slide part (and
+        everything else in the package) stays byte-identical."""
+        pres = self.xml_part(_PRESENTATION)
+        sld_id_lst = pres.find("p:sldIdLst")
+        if sld_id_lst is None:
+            raise ValueError("presentation has no p:sldIdLst")
+        ids = sld_id_lst.findall(qn("p:sldId"))
+        n = len(ids)
+        if not 0 <= index < n:
+            raise IndexError(f"slide index {index} out of range (0..{n - 1})")
+        if not 0 <= to < n:
+            raise IndexError(f"destination {to} out of range (0..{n - 1})")
+        if index == to:
+            return
+        el = ids[index]
+        sld_id_lst.remove(el)
+        remaining = sld_id_lst.findall(qn("p:sldId"))
+        if to >= len(remaining):
+            sld_id_lst.append(el)
+        else:
+            remaining[to].addprevious(el)
+        pres.mark_dirty()
 
-    def _delete_part(self, name: str) -> list[str]:
-        """Remove *name* and its rels part; returns what was removed."""
-        removed = []
-        if self.package.has_part(name):
-            self.package.remove_part(name)
-            removed.append(name)
-        rels_name = OpcPackage._rels_name_for(name)
-        if self.package.has_part(rels_name):
-            self.package.remove_part(rels_name)
-            removed.append(rels_name)
-        self._xml_parts.pop(name, None)
-        self._xml_parts.pop(rels_name, None)
-        return removed
+    def duplicate_slide(self, index: int, *, at: int | None = None) -> int:
+        """Insert an independent copy of slide *index* at position *at*
+        (default: right after the source). Returns the new slide's index.
 
-    def _referenced_parts(self) -> set[str]:
-        """Internal targets of every relationships part still present."""
-        referenced: set[str] = set()
-        for rels_name in list(self.package.part_names):
-            if not rels_name.endswith(".rels"):
-                continue
-            directory, base = posixpath.split(rels_name)
-            owner_dir = posixpath.dirname(directory)
-            owner_base = base[: -len(".rels")]
-            owner = posixpath.join(owner_dir, owner_base) if owner_base else ""
-            rels = self.package.rels_for(owner)
-            if rels is None:
-                continue
-            for rel in rels:
-                if rel["mode"] == "External":
-                    continue
-                referenced.add(rels.resolve(owner, rel["target"]))
-        return referenced
+        The slide's XML and its non-shared referenced parts (charts,
+        embedded workbooks, chart colors/styles, notes slide) are deep-
+        copied under fresh names via ``clone_part_graph``; images, layouts
+        and the notes master are shared (see ``_SHARE_ON_DUPLICATE``). The
+        notes slide's back-reference is retargeted to the copy. A new
+        ``p:sldId`` (id = max + 1, ≥ 256) and presentation relationship are
+        added; existing slide parts stay byte-identical."""
+        slides = self.slides
+        if not 0 <= index < len(slides):
+            raise IndexError(f"slide index {index} out of range (0..{len(slides) - 1})")
+        src_part = slides[index].part_name
 
-    def _drop_content_type_overrides(self, part_names: list[str]) -> None:
-        from lxml import etree
+        renamer = make_part_renamer(self.package)
+        new_part, _ = self.package.clone_part_graph(
+            src_part, rename=renamer, share_types=self._SHARE_ON_DUPLICATE
+        )
 
-        ct_part = self.package.get_part("[Content_Types].xml")
-        root = etree.fromstring(ct_part.read())
-        doomed = {f"/{name}" for name in part_names}
-        changed = False
-        for el in list(root):
-            if el.tag == qn("ct:Override") and el.get("PartName") in doomed:
-                root.remove(el)
-                changed = True
-        if changed:
-            ct_part.write(
-                etree.tostring(
-                    root, xml_declaration=True, encoding="UTF-8", standalone=True
-                )
-            )
+        pres = self.xml_part(_PRESENTATION)
+        pres_rels = self.package.rels_for(_PRESENTATION)
+        if pres_rels is None:  # pragma: no cover - malformed package
+            raise ValueError("presentation has no relationships part")
+        slide_rel_type = next(
+            (rel["type"] for rel in pres_rels.by_type("/slide")),
+            "http://schemas.openxmlformats.org/officeDocument/2006/"
+            "relationships/slide",
+        )
+        new_rid = pres_rels.next_id()
+        target = posixpath.relpath(new_part, posixpath.dirname(_PRESENTATION))
+        pres_rels.add(new_rid, slide_rel_type, target)
+
+        sld_id_lst = pres.find("p:sldIdLst")
+        if sld_id_lst is None:  # pragma: no cover - malformed package
+            raise ValueError("presentation has no p:sldIdLst")
+        existing = sld_id_lst.findall(qn("p:sldId"))
+        used_ids = [
+            int(s.get("id")) for s in existing if (s.get("id") or "").isdigit()
+        ]
+        new_el = sld_id_lst.makeelement(
+            qn("p:sldId"), {"id": str(max(used_ids, default=255) + 1), qn("r:id"): new_rid}
+        )
+        pos = index + 1 if at is None else max(0, min(at, len(existing)))
+        if pos >= len(existing):
+            sld_id_lst.append(new_el)
+        else:
+            existing[pos].addprevious(new_el)
+        pres.mark_dirty()
+        return pos

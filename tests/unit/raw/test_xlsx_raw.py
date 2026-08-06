@@ -600,3 +600,105 @@ class TestOrderingInvariants:
         out = raw.to_bytes()
         row2 = _sheet_root(out, SHEET1).findall("s:sheetData/s:row", NS)[1]
         assert [c.get("r") for c in row2] == ["A2", "B2", "C2", "D2"]
+
+
+class TestSheetStructure:
+    def test_add_sheet(self):
+        raw = open_raw(_build_workbook())
+        raw.add_sheet("Extra")
+        wb = _load_wb(raw.to_bytes())
+        assert wb.sheetnames == ["Sales", "Notes", "Extra"]
+
+    def test_add_sheet_at_position(self):
+        raw = open_raw(_build_workbook())
+        raw.add_sheet("First", at=0)
+        assert _load_wb(raw.to_bytes()).sheetnames[0] == "First"
+
+    def test_copy_sheet_clones_chart(self):
+        data = _build_workbook()
+        raw = open_raw(data)
+        raw.copy_sheet("Sales", "Sales copy")
+        out = raw.to_bytes()
+        assert _load_wb(out).sheetnames == ["Sales", "Sales copy", "Notes"]
+        added = set(_parts(out)) - set(_parts(data))
+        # a NEW worksheet + a NEW chart (independent copy)
+        assert any("worksheets/sheet" in n for n in added), added
+        assert any("charts/chart" in n for n in added), added
+
+    def test_copy_sheet_leaves_originals_byte_identical(self):
+        data = _build_workbook()
+        raw = open_raw(data)
+        raw.copy_sheet("Sales", "Dup")
+        pa, pb = _parts(data), _parts(raw.to_bytes())
+        # among PRE-EXISTING parts, only the workbook wiring changes; no
+        # existing sheet/chart is mutated (the copy is all-new parts).
+        changed = {n for n in pa if pa[n] != pb[n]}
+        assert changed == {
+            "[Content_Types].xml",
+            "xl/_rels/workbook.xml.rels",
+            "xl/workbook.xml",
+        }, changed
+
+    def test_copy_sheet_shares_image(self):
+        data = _build_workbook(with_image=True)
+        raw = open_raw(data)
+        raw.copy_sheet("Sales", "Dup")
+        out = raw.to_bytes()
+        before = [n for n in _parts(data) if "media/image" in n]
+        after = [n for n in _parts(out) if "media/image" in n]
+        assert len(after) == len(before)  # image referenced, not duplicated
+
+    def test_copy_sheet_reopens_in_openpyxl(self):
+        raw = open_raw(_build_workbook())
+        raw.copy_sheet("Notes", "Notes2", at=0)
+        wb = _load_wb(raw.to_bytes())
+        assert wb.sheetnames[0] == "Notes2"
+
+    def test_move_sheet(self):
+        raw = open_raw(_build_workbook())
+        raw.move_sheet("Notes", 0)
+        assert _load_wb(raw.to_bytes()).sheetnames == ["Notes", "Sales"]
+
+    def test_move_sheet_is_pure_workbook_reorder(self):
+        data = _build_workbook()
+        raw = open_raw(data)
+        raw.move_sheet(0, 1)
+        assert _diff_parts(data, raw.to_bytes()) == {"xl/workbook.xml"}
+
+    def test_rename_sheet(self):
+        raw = open_raw(_build_workbook())
+        raw.rename_sheet("Sales", "Revenue")
+        assert _load_wb(raw.to_bytes()).sheetnames == ["Revenue", "Notes"]
+
+    def test_rename_rejects_duplicate_and_overlong(self):
+        raw = open_raw(_build_workbook())
+        with pytest.raises(ValueError):
+            raw.rename_sheet("Sales", "Notes")  # already exists
+        with pytest.raises(ValueError):
+            raw.rename_sheet("Sales", "x" * 32)  # > 31 chars
+
+    def test_delete_sheet_orphan_sweeps_chart(self):
+        data = _build_workbook()
+        raw = open_raw(data)
+        raw.delete_sheet("Sales")  # Sales owns the chart
+        out = raw.to_bytes()
+        assert _load_wb(out).sheetnames == ["Notes"]
+        assert not any("charts/chart" in n for n in _parts(out)), "chart orphan not swept"
+
+    def test_delete_last_sheet_refused(self):
+        raw = open_raw(_build_workbook())
+        raw.delete_sheet("Notes")
+        with pytest.raises(ValueError):
+            raw.delete_sheet("Sales")  # would leave zero sheets
+
+    def test_copy_rejects_bad_name(self):
+        raw = open_raw(_build_workbook())
+        with pytest.raises(ValueError):
+            raw.copy_sheet("Sales", "Notes")  # duplicate
+        with pytest.raises(ValueError):
+            raw.copy_sheet("Sales", "a/b")  # forbidden char
+
+    def test_resolve_by_index_and_name(self):
+        raw = open_raw(_build_workbook())
+        raw.move_sheet(1, 0)  # by index
+        assert _load_wb(raw.to_bytes()).sheetnames == ["Notes", "Sales"]
